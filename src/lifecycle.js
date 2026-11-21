@@ -8,6 +8,10 @@ const { DEFAULT_VALUES, applyRecovery, adjustValue } = require('./resources');
 
 const DEFAULT_ANCHOR = '2026-11-16'; // 2週間周期のアンカー（月曜）
 
+// 右端ドックの3態（レイアウトイメージ正本：最小化／待機ミニ／展開メイン）
+const DOCK_MODES = ['expanded', 'mini', 'minimized'];
+const DEFAULT_DOCK_MODE = 'expanded';
+
 function defaultState(now, anchor = DEFAULT_ANCHOR) {
   const checks = {};
   for (const p of PERIODS) checks[p] = { key: periodKey(p, now, anchor), done: {} };
@@ -17,6 +21,7 @@ function defaultState(now, anchor = DEFAULT_ANCHOR) {
       address: null, // 'ご主人様' | 'お嬢様'（初回選択までは null）
       character: 'momo',
       showAgent: true, // エージェント（キャラ表示）のオン/オフ。管理専用ではオフにできる
+      dockMode: DEFAULT_DOCK_MODE, // ドックの表示状態（expanded/mini/minimized）
       notify: {}, // itemId -> bool（未設定はプリセットの既定に従う）
       biweeklyAnchor: anchor,
     },
@@ -41,6 +46,8 @@ function normalizeState(raw, now) {
       lastRecoveryAt: (raw.resources && raw.resources.lastRecoveryAt) || now.toISOString(),
     },
   };
+  // dockMode は想定外の値を既定へ戻す（壊れた保存データで表示が消えないように）
+  if (!DOCK_MODES.includes(out.settings.dockMode)) out.settings.dockMode = DEFAULT_DOCK_MODE;
   for (const p of PERIODS) {
     const c = raw.checks && raw.checks[p];
     out.checks[p] = c && typeof c.key === 'string'
@@ -93,6 +100,8 @@ function isPeriodComplete(state, period, items) {
 
 module.exports = {
   DEFAULT_ANCHOR,
+  DOCK_MODES,
+  DEFAULT_DOCK_MODE,
   defaultState,
   normalizeState,
   advanceState,

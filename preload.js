@@ -16,4 +16,6 @@ contextBridge.exposeInMainWorld('maid', {
   setCharacter: (value) => ipcRenderer.invoke('set-character', value),
   setNotify: (itemId, value) => ipcRenderer.invoke('set-notify', { itemId, value }),
   setAnchor: (value) => ipcRenderer.invoke('set-anchor', value),
+  setDockMode: (mode) => ipcRenderer.invoke('set-dock-mode', mode),
+  quitApp: () => ipcRenderer.invoke('quit-app'),
 });

@@ -84,6 +84,18 @@ test('normalizeState: 壊れた・欠けたデータでも既定で埋まる', (
   assert.equal(normalizeState(null, D(2026, 11, 21, 10)).settings.character, 'momo');
 });
 
+test('dockMode: 既定は expanded、保存済みの状態は保持され、想定外の値は expanded に戻る', () => {
+  assert.equal(defaultState(D(2026, 11, 21, 10)).settings.dockMode, 'expanded');
+  for (const mode of ['expanded', 'mini', 'minimized']) {
+    const s = normalizeState({ settings: { dockMode: mode } }, D(2026, 11, 21, 10));
+    assert.equal(s.settings.dockMode, mode);
+  }
+  const broken = normalizeState({ settings: { dockMode: 'floating' } }, D(2026, 11, 21, 10));
+  assert.equal(broken.settings.dockMode, 'expanded');
+  const missing = normalizeState({ settings: {} }, D(2026, 11, 21, 10));
+  assert.equal(missing.settings.dockMode, 'expanded');
+});
+
 test('showAgent: 既定はオン、保存済みのオフは保持され、欠けていればオンで埋まる', () => {
   assert.equal(defaultState(D(2026, 11, 21, 10)).settings.showAgent, true);
   const off = normalizeState({ settings: { showAgent: false } }, D(2026, 11, 21, 10));

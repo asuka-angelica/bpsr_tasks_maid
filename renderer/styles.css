@@ -23,6 +23,16 @@ body {
   overflow: hidden;
   user-select: none;
 }
+/* ---- 右端ドックの3態（feat/dock-states） ----
+ * body[data-dock] でビューを切り替える。ウィンドウ自体の大きさ・位置は
+ * メインプロセスがモードごとに決める（フレームレス＋右端固定）。 */
+#view-expanded { display: none; flex: 1 1 auto; min-height: 0; flex-direction: column; }
+body[data-dock="expanded"] #view-expanded { display: flex; }
+#view-mini { display: none; height: 100%; flex-direction: column; align-items: center; gap: 12px; padding: 10px 8px; border-left: 1px solid var(--line); -webkit-app-region: drag; }
+body[data-dock="mini"] #view-mini { display: flex; }
+#view-minimized { display: none; height: 100%; }
+body[data-dock="minimized"] #view-minimized { display: flex; }
+
 .app-header {
   flex: 0 0 auto;
   display: flex;
@@ -30,7 +40,10 @@ body {
   justify-content: space-between;
   padding: 10px 16px;
   border-bottom: 1px solid var(--line);
+  -webkit-app-region: drag;
 }
+.app-header .header-actions { display: flex; gap: 8px; -webkit-app-region: no-drag; }
+.header-actions .icon-btn { font-size: 16px; font-family: inherit; }
 .app-title { font-size: 17px; font-weight: 700; letter-spacing: 0.04em; }
 .app-version { font-size: 12px; color: var(--ink-soft); font-weight: 400; }
 .icon-btn {
@@ -64,9 +77,9 @@ body {
   display: flex;
   position: relative;
 }
-/* 動画の枠：等身クリップ（768×1152 = 2:3）に合わせたアスペクトで、
+/* 動画の枠：展開表示の等身クリップ（768×1152 = 2:3）に合わせたアスペクトで、
  * 高さはステージいっぱい（上限はカラム幅×1.5）にし、幅は max-width で抑える。
- * 縮小表示（SD クリップ 960×960）の時は mode-sd で 1:1 に切り替わる。 */
+ * SD クリップは待機（ミニ）表示の専用で、そちらは .mini-char 側で持つ。 */
 .avatar-frame {
   height: min(100%, calc(var(--char-w) * 1.5));
   aspect-ratio: 2 / 3;
@@ -78,10 +91,6 @@ body {
   display: flex; align-items: center; justify-content: center;
   overflow: hidden;
   position: relative;
-}
-.avatar-frame.mode-sd {
-  height: min(100%, var(--char-w));
-  aspect-ratio: 1 / 1;
 }
 .avatar-frame video { display: block; width: 100%; height: 100%; object-fit: cover; }
 .avatar-placeholder { color: var(--ink-soft); font-size: 14px; }
@@ -177,6 +186,55 @@ body.agent-off .char-column { display: none; }
   padding: 1px 7px; color: var(--ink-soft); flex: 0 0 auto;
 }
 .check-item .ci-deadline { color: #ffb3c8; border-color: rgba(255,179,200,0.5); }
+
+/* ---- 待機（ミニ）バー ---- */
+.mini-char {
+  flex: 0 0 auto;
+  width: 100px; height: 100px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+.mini-char video { display: block; width: 100%; height: 100%; object-fit: cover; }
+.mini-buttons { display: flex; flex-direction: column; gap: 10px; align-items: center; -webkit-app-region: no-drag; }
+.mini-btn {
+  width: 46px; height: 46px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 19px; font-family: inherit;
+  cursor: pointer;
+  position: relative;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.mini-btn:hover { background: var(--accent-soft); }
+.mini-badge {
+  position: absolute; top: -6px; right: -6px;
+  min-width: 20px; height: 20px; padding: 0 5px;
+  border-radius: 999px;
+  background: var(--accent); color: var(--accent-ink);
+  font-size: 12px; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.mini-badge.hidden { display: none; }
+
+/* ---- 最小化（アイコンのみ） ---- */
+.restore-btn {
+  flex: 1 1 auto;
+  margin: 4px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 26px;
+  cursor: pointer;
+}
+.restore-btn:hover { background: var(--accent); color: var(--accent-ink); }
 
 .overlay {
   position: fixed; inset: 0;
