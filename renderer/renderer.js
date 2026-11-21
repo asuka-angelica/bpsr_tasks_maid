@@ -176,20 +176,22 @@ let lastLineText = '';
 function renderCharacter() {
   const stage = document.getElementById('avatar-stage');
   if (!stage) return;
+  // 描画先は正方形の枠（avatar-frame）。無ければステージ自体に描く。
+  const mount = document.getElementById('avatar-frame') || stage;
   if (!avatarStarted) {
     avatarStarted = true;
-    stage.innerHTML = '';
+    mount.innerHTML = '';
     const el = document.createElement('mesh-avatar');
     el.id = 'avatar';
     el.setAttribute('src', 'assets/momo3.mavatar');
     el.setAttribute('label', 'モモのアバター');
-    stage.appendChild(el);
+    mount.appendChild(el);
     const script = document.createElement('script');
     script.src = 'assets/mesh-avatar.js';
     document.body.appendChild(script);
     el.addEventListener('load', (ev) => { avatar = ev.detail.avatar; });
     el.addEventListener('error', () => {
-      stage.innerHTML = '<div class="avatar-placeholder">モモ（読み込みに失敗しました）</div>';
+      mount.innerHTML = '<div class="avatar-placeholder">モモ（読み込みに失敗しました）</div>';
     });
   }
   if (!greeted && state && state.settings) {

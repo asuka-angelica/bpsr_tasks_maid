@@ -9,6 +9,7 @@
   --accent-ink: #241239;
   --accent-soft: rgba(177, 140, 255, 0.22);
   --ok: #7be3a8;
+  --char-w: 300px;
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; }
@@ -51,7 +52,7 @@ body {
   padding: 14px 16px 16px;
 }
 .char-column {
-  flex: 0 0 300px;
+  flex: 0 0 var(--char-w);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -60,6 +61,17 @@ body {
 .avatar-stage {
   flex: 1 1 auto;
   min-height: 0;
+  display: flex;
+  position: relative;
+}
+/* 正方形の枠：高さは「ステージの高さ」と「カラム幅」の小さい方に合わせ、
+ * aspect-ratio で幅を決める。ウィンドウが低くても正方形のまま縮み、
+ * アバターが枠の上下で中途半端に切れることがない。 */
+.avatar-frame {
+  height: min(100%, var(--char-w));
+  aspect-ratio: 1 / 1;
+  max-width: 100%;
+  margin: auto;
   border: 1px solid var(--line);
   border-radius: 16px;
   background: var(--panel);
@@ -67,7 +79,7 @@ body {
   overflow: hidden;
   position: relative;
 }
-.avatar-stage mesh-avatar { display: block; width: 100%; }
+.avatar-frame mesh-avatar { display: block; width: 100%; height: 100%; }
 .avatar-placeholder { color: var(--ink-soft); font-size: 14px; }
 .bubble {
   flex: 0 0 auto;
