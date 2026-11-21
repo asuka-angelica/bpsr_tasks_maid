@@ -69,13 +69,43 @@ function createMainWindow() {
   return win;
 }
 
-// ---- 状態の受け渡し（各機能ブランチで拡張される） ----
-// フェーズ0の土台ではプレースホルダのスナップショットを返す。
-// 本実装（チェック状態・設定・数値）は src/ 側のモジュールが担う。
+// ---- 状態管理（正本は src/ の純粋モジュール＋ローカルJSON） ----
+const { PRESETS } = require('./src/presets');
+const { PERIOD_LABELS } = require('./src/cycles');
+const { RESOURCE_DEFS } = require('./src/resources');
+const lifecycle = require('./src/lifecycle');
+const store = require('./src/store');
+
+let appState = null;
+let advanceTimer = null;
+
+function stateFilePath() {
+  return path.join(app.getPath('userData'), 'data.json');
+}
+
+function save() {
+  try { store.saveState(stateFilePath(), appState); } catch (err) { console.error('[save]', err); }
+}
+
+// 時間経過（周期リセット＋資源回復）を反映し、変化があれば保存して配る
+function advanceAndSave() {
+  if (!appState) return;
+  const { state, events } = lifecycle.advanceState(appState, new Date());
+  if (events.resetPeriods.length > 0 || events.recoveredDays > 0) {
+    appState = state;
+    save();
+    broadcast();
+  }
+}
+
 function snapshot() {
   return {
     appVersion: APP_VERSION,
-    foundationOnly: true,
+    settings: appState.settings,
+    checks: appState.checks,
+    presets: PRESETS,
+    periodLabels: PERIOD_LABELS,
+    resources: { defs: RESOURCE_DEFS, values: appState.resources.values },
   };
 }
 
@@ -91,7 +121,65 @@ function broadcast() {
 
 ipcMain.handle('get-state', () => snapshot());
 
+ipcMain.handle('toggle-check', (_e, { period, itemId }) => {
+  appState = lifecycle.toggleCheck(appState, period, itemId);
+  save();
+  broadcast();
+  return snapshot();
+});
+
+ipcMain.handle('adjust-resource', (_e, { id, delta }) => {
+  appState = lifecycle.adjustResource(appState, id, delta);
+  save();
+  broadcast();
+  return snapshot();
+});
+
+ipcMain.handle('set-address', (_e, value) => {
+  if (value === 'ご主人様' || value === 'お嬢様') {
+    appState = structuredClone(appState);
+    appState.settings.address = value;
+    save();
+    broadcast();
+  }
+  return snapshot();
+});
+
+ipcMain.handle('set-character', (_e, value) => {
+  if (value === 'momo' || value === 'suzuran' || value === 'mimoza') {
+    appState = structuredClone(appState);
+    appState.settings.character = value;
+    save();
+    broadcast();
+  }
+  return snapshot();
+});
+
+ipcMain.handle('set-notify', (_e, { itemId, value }) => {
+  appState = structuredClone(appState);
+  appState.settings.notify[itemId] = !!value;
+  save();
+  broadcast();
+  return snapshot();
+});
+
+ipcMain.handle('set-anchor', (_e, value) => {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(value))) {
+    appState = structuredClone(appState);
+    appState.settings.biweeklyAnchor = String(value);
+    // アンカーが変わったら隔週キーを計算し直す
+    const { state } = lifecycle.advanceState(appState, new Date());
+    appState = state;
+    save();
+    broadcast();
+  }
+  return snapshot();
+});
+
 app.whenReady().then(() => {
+  appState = store.loadState(stateFilePath(), new Date());
+  advanceAndSave();
+  advanceTimer = setInterval(advanceAndSave, 30 * 1000);
   registerProtocol();
   createMainWindow();
 
