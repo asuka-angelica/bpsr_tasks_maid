@@ -253,7 +253,7 @@ function renderResources() {
   }
 }
 
-/* ---- キャラ表示＋吹き出し（feat/video-display → feat/dock-states → feat/suzuran-video） ----
+/* ---- キャラ表示＋吹き出し（feat/video-display → feat/dock-states → feat/suzuran-video → feat/mimoza-video） ----
  * メイドを動画クリップで表示する（Mesh Avatar から置き換え、2026-11-22 あすか決定）。
  *   起動時：挨拶クリップを1回 → 待機ループ
  *   チェック時／周期の全完了時：褒めるクリップを1回 → 待機へ復帰
@@ -286,6 +286,19 @@ const CLIPS = {
       idle: 'assets/suzuran-sd-idle.mp4', // 待機は 0〜2.0s のクリーン区間を往復再生化
       greeting: null, // SD の挨拶クリップは無いので待機で代用する
       praise: 'assets/suzuran-sd-jump.mp4',
+    },
+  },
+  mimoza: {
+    full: {
+      // 待機は原画クリップ 0〜3.0s の区間を往復再生化（全区間クリーンだったがループ用に抜粋）
+      idle: 'assets/mimosa-idle.mp4',
+      greeting: 'assets/mimosa-greeting.mp4', // 0〜8s（お辞儀→復帰まで）
+      praise: 'assets/mimosa-praise.mp4',
+    },
+    sd: {
+      idle: 'assets/mimosa-sd-idle.mp4', // 待機は 0〜3.0s のクリーン区間を往復再生化
+      greeting: null, // SD の挨拶クリップは無いので待機で代用する
+      praise: 'assets/mimosa-sd-jump.mp4',
     },
   },
 };
@@ -502,7 +515,7 @@ function renderSettings() {
   const chars = [
     { id: 'momo', label: 'モモ', ready: true },
     { id: 'suzuran', label: 'スズラン', ready: true },
-    { id: 'mimoza', label: 'ミモザ（準備中）', ready: false },
+    { id: 'mimoza', label: 'ミモザ', ready: true },
   ];
   for (const c of chars) {
     const opt = document.createElement('option');
