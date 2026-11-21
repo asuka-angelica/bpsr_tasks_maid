@@ -227,9 +227,145 @@ function reactAvatar(expression, ms) {
   } catch { /* 表情が使えない環境では吹き出しだけ */ }
 }
 
-/* ---- 設定（feat/settings） ---- */
-function renderSettings() { /* 後続ブランチで実装 */ }
-function renderFirstRun() { /* 後続ブランチで実装 */ }
+/* ---- 設定（feat/settings） ----
+ * 呼び方の変更、キャラ選択（モモのみ有効、他は準備中）、
+ * 2週間周期のアンカー日、項目ごとの通知オン/オフ（保存のみ・発火はフェーズ1）。 */
+function notifyValueOf(item) {
+  const saved = state.settings.notify && state.settings.notify[item.id];
+  if (typeof saved === 'boolean') return saved;
+  return item.notifyDefault !== false;
+}
+
+function renderSettings() {
+  const body = document.getElementById('settings-body');
+  if (!body || !state || !state.settings) return;
+  body.innerHTML = '';
+
+  const hAddr = document.createElement('h3');
+  hAddr.textContent = '呼び方';
+  body.appendChild(hAddr);
+  const addrRow = document.createElement('div');
+  addrRow.className = 'setting-row';
+  const addrLabel = document.createElement('span');
+  addrLabel.className = 's-label';
+  addrLabel.textContent = 'わたしからの呼び方';
+  addrRow.appendChild(addrLabel);
+  const addrSel = document.createElement('select');
+  for (const v of ['ご主人様', 'お嬢様']) {
+    const opt = document.createElement('option');
+    opt.value = v;
+    opt.textContent = v;
+    if (state.settings.address === v) opt.selected = true;
+    addrSel.appendChild(opt);
+  }
+  addrSel.addEventListener('change', async () => {
+    state = await window.maid.setAddress(addrSel.value);
+    render();
+    say('greeting');
+  });
+  addrRow.appendChild(addrSel);
+  body.appendChild(addrRow);
+
+  const hChar = document.createElement('h3');
+  hChar.textContent = 'キャラ';
+  body.appendChild(hChar);
+  const charRow = document.createElement('div');
+  charRow.className = 'setting-row';
+  const charLabel = document.createElement('span');
+  charLabel.className = 's-label';
+  charLabel.textContent = '常駐するメイド';
+  charRow.appendChild(charLabel);
+  const charSel = document.createElement('select');
+  const chars = [
+    { id: 'momo', label: 'モモ', ready: true },
+    { id: 'suzuran', label: 'スズラン（準備中）', ready: false },
+    { id: 'mimoza', label: 'ミモザ（準備中）', ready: false },
+  ];
+  for (const c of chars) {
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = c.label;
+    opt.disabled = !c.ready;
+    if (state.settings.character === c.id) opt.selected = true;
+    charSel.appendChild(opt);
+  }
+  charSel.addEventListener('change', async () => {
+    state = await window.maid.setCharacter(charSel.value);
+    render();
+  });
+  charRow.appendChild(charSel);
+  body.appendChild(charRow);
+
+  const hAnchor = document.createElement('h3');
+  hAnchor.textContent = '2週間周期';
+  body.appendChild(hAnchor);
+  const anchorRow = document.createElement('div');
+  anchorRow.className = 'setting-row';
+  const anchorLabel = document.createElement('span');
+  anchorLabel.className = 's-label';
+  anchorLabel.textContent = 'アンカー日（周期の開始日）';
+  anchorRow.appendChild(anchorLabel);
+  const anchorInput = document.createElement('input');
+  anchorInput.type = 'date';
+  anchorInput.value = state.settings.biweeklyAnchor || '';
+  anchorInput.addEventListener('change', async () => {
+    if (anchorInput.value) {
+      state = await window.maid.setAnchor(anchorInput.value);
+      render();
+    }
+  });
+  anchorRow.appendChild(anchorInput);
+  body.appendChild(anchorRow);
+
+  const hNotify = document.createElement('h3');
+  hNotify.textContent = '項目ごとの通知（オン/オフは保存のみ・通知の発火はフェーズ1）';
+  body.appendChild(hNotify);
+  for (const period of PERIODS) {
+    const sub = document.createElement('h3');
+    sub.textContent = state.periodLabels[period];
+    body.appendChild(sub);
+    for (const item of periodItems(period)) {
+      const row = document.createElement('div');
+      row.className = 'setting-row';
+      const label = document.createElement('span');
+      label.className = 's-label';
+      label.textContent = item.name;
+      row.appendChild(label);
+      const sw = document.createElement('label');
+      sw.className = 'switch';
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.checked = notifyValueOf(item);
+      input.addEventListener('change', async () => {
+        state = await window.maid.setNotify(item.id, input.checked);
+        render();
+      });
+      const track = document.createElement('span');
+      track.className = 'track';
+      sw.appendChild(input);
+      sw.appendChild(track);
+      row.appendChild(sw);
+      body.appendChild(row);
+    }
+  }
+}
+
+/* ---- 初回起動時の呼び方選択（feat/settings） ---- */
+function renderFirstRun() {
+  const overlay = document.getElementById('firstrun-overlay');
+  if (!overlay || !state || !state.settings) return;
+  overlay.classList.toggle('hidden', !!state.settings.address);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('[data-address]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      state = await window.maid.setAddress(btn.getAttribute('data-address'));
+      render();
+      say('greeting');
+    });
+  });
+});
 
 window.addEventListener('DOMContentLoaded', () => {
   window.maid.onState((s) => { state = s; render(); });
