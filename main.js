@@ -73,6 +73,7 @@ function createMainWindow() {
 const { PRESETS } = require('./src/presets');
 const { PERIOD_LABELS } = require('./src/cycles');
 const { RESOURCE_DEFS } = require('./src/resources');
+const lines = require('./src/lines');
 const lifecycle = require('./src/lifecycle');
 const store = require('./src/store');
 
@@ -106,6 +107,7 @@ function snapshot() {
     presets: PRESETS,
     periodLabels: PERIOD_LABELS,
     resources: { defs: RESOURCE_DEFS, values: appState.resources.values },
+    lines: lines.forCharacter(appState.settings.character),
   };
 }
 
