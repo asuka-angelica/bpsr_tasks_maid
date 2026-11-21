@@ -6,39 +6,69 @@
 <title>スタレゾ日課メイド（仮称）</title>
 <link rel="stylesheet" href="styles.css" />
 </head>
-<body>
-  <header class="app-header">
-    <div class="app-title">スタレゾ日課メイド <span class="app-version" id="app-version"></span></div>
-    <button id="btn-settings" class="icon-btn" type="button" title="設定" aria-label="設定">
-      <!-- placeholder: gear icon (see docs/PLACEHOLDERS.md) -->
-      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M12 8.5A3.5 3.5 0 1 0 12 15.5 3.5 3.5 0 0 0 12 8.5zm9 3.5-2 .5a7 7 0 0 1-.6 1.4l1.1 1.8-1.4 1.4-1.8-1.1a7 7 0 0 1-1.4.6l-.5 2h-2l-.5-2a7 7 0 0 1-1.4-.6L3.9 17.1 2.5 15.7l1.1-1.8A7 7 0 0 1 3 12.5l-2-.5 0-2 2-.5a7 7 0 0 1 .6-1.4L2.5 6.3 3.9 4.9l1.8 1.1a7 7 0 0 1 1.4-.6l.5-2h2l.5 2a7 7 0 0 1 1.4.6l1.8-1.1 1.4 1.4-1.1 1.8a7 7 0 0 1 .6 1.4l2 .5z" transform="scale(0.92) translate(1,1)"/></svg>
-    </button>
-  </header>
+<body data-dock="expanded">
+  <!-- 展開（メイン）：従来のメインパネル -->
+  <div id="view-expanded">
+    <header class="app-header">
+      <div class="app-title">スタレゾ日課メイド <span class="app-version" id="app-version"></span></div>
+      <div class="header-actions">
+        <button id="btn-settings" class="icon-btn" type="button" title="設定" aria-label="設定">
+          <!-- placeholder: gear icon (see docs/PLACEHOLDERS.md) -->
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M12 8.5A3.5 3.5 0 1 0 12 15.5 3.5 3.5 0 0 0 12 8.5zm9 3.5-2 .5a7 7 0 0 1-.6 1.4l1.1 1.8-1.4 1.4-1.8-1.1a7 7 0 0 1-1.4.6l-.5 2h-2l-.5-2a7 7 0 0 1-1.4-.6L3.9 17.1 2.5 15.7l1.1-1.8A7 7 0 0 1 3 12.5l-2-.5 0-2 2-.5a7 7 0 0 1 .6-1.4L2.5 6.3 3.9 4.9l1.8 1.1a7 7 0 0 1 1.4.6l.5-2h2l.5 2a7 7 0 0 1 1.4.6l1.8-1.1 1.4 1.4-1.1 1.8a7 7 0 0 1 .6 1.4l2 .5z" transform="scale(0.92) translate(1,1)"/></svg>
+        </button>
+        <button id="btn-to-mini" class="icon-btn" type="button" title="待機（ミニ）に戻す" aria-label="待機（ミニ）に戻す">›</button>
+        <button id="btn-to-minimized" class="icon-btn" type="button" title="最小化" aria-label="最小化">―</button>
+        <button id="btn-quit" class="icon-btn" type="button" title="終了" aria-label="終了">✕</button>
+      </div>
+    </header>
 
-  <main class="layout">
-    <section class="char-column">
-      <div class="avatar-stage" id="avatar-stage">
-        <!-- キャラ表示：枠（avatar-frame）の中に動画クリップを再生する。
-             等身は 2:3、縮小表示（SD）は 1:1 で枠のアスペクトが切り替わる -->
-        <div class="avatar-frame" id="avatar-frame">
-          <div class="avatar-placeholder" id="avatar-placeholder">モモ（準備中）</div>
+    <main class="layout">
+      <section class="char-column">
+        <div class="avatar-stage" id="avatar-stage">
+          <!-- キャラ表示：枠（avatar-frame）の中に等身動画クリップを再生する（2:3） -->
+          <div class="avatar-frame" id="avatar-frame">
+            <div class="avatar-placeholder" id="avatar-placeholder">モモ（準備中）</div>
+          </div>
         </div>
-      </div>
-      <div class="bubble" id="bubble"><p id="bubble-text">…</p></div>
-      <div class="resources" id="resources">
-        <!-- 数値管理（feat/resources で組み込む） -->
-      </div>
-    </section>
+        <div class="bubble" id="bubble"><p id="bubble-text">…</p></div>
+        <div class="resources" id="resources">
+          <!-- 数値管理（feat/resources で組み込む） -->
+        </div>
+      </section>
 
-    <section class="list-column">
-      <nav class="tabs" id="tabs" aria-label="周期タブ"></nav>
-      <div class="progress-wrap">
-        <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
-        <div class="progress-text" id="progress-text"></div>
-      </div>
-      <div class="check-list" id="check-list"></div>
-    </section>
-  </main>
+      <section class="list-column">
+        <nav class="tabs" id="tabs" aria-label="周期タブ"></nav>
+        <div class="progress-wrap">
+          <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+          <div class="progress-text" id="progress-text"></div>
+        </div>
+        <div class="check-list" id="check-list"></div>
+      </section>
+    </main>
+  </div>
+
+  <!-- 待機（ミニ）：右端の細い縦バー。キャラ表示は SD クリップ。
+       ホバー（少し置く）かクリックで展開する -->
+  <div id="view-mini">
+    <div class="mini-char" id="mini-char" title="モモ">
+      <div class="avatar-placeholder">…</div>
+    </div>
+    <nav class="mini-buttons" aria-label="ドック操作">
+      <button id="btn-mini-expand" class="mini-btn" type="button" title="展開する" aria-label="展開する">«</button>
+      <button id="btn-mini-tasks" class="mini-btn" type="button" title="タスクを開く" aria-label="タスクを開く">
+        ✓<span class="mini-badge hidden" id="mini-badge"></span>
+      </button>
+      <button id="btn-mini-settings" class="mini-btn" type="button" title="設定を開く" aria-label="設定を開く">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M12 8.5A3.5 3.5 0 1 0 12 15.5 3.5 3.5 0 0 0 12 8.5zm9 3.5-2 .5a7 7 0 0 1-.6 1.4l1.1 1.8-1.4 1.4-1.8-1.1a7 7 0 0 1-1.4.6l-.5 2h-2l-.5-2a7 7 0 0 1-1.4-.6L3.9 17.1 2.5 15.7l1.1-1.8A7 7 0 0 1 3 12.5l-2-.5 0-2 2-.5a7 7 0 0 1 .6-1.4L2.5 6.3 3.9 4.9l1.8 1.1a7 7 0 0 1 1.4.6l.5-2h2l.5 2a7 7 0 0 1 1.4.6l1.8-1.1 1.4 1.4-1.1 1.8a7 7 0 0 1 .6 1.4l2 .5z" transform="scale(0.92) translate(1,1)"/></svg>
+      </button>
+      <button id="btn-mini-minimize" class="mini-btn" type="button" title="最小化" aria-label="最小化">―</button>
+    </nav>
+  </div>
+
+  <!-- 最小化：アイコンのみ。ホバー（少し置く）かクリックで待機（ミニ）へ -->
+  <div id="view-minimized">
+    <button id="btn-restore" class="restore-btn" type="button" title="スタレゾ日課メイド" aria-label="待機（ミニ）に戻す">✿</button>
+  </div>
 
   <div class="overlay hidden" id="settings-overlay">
     <div class="panel" role="dialog" aria-label="設定">

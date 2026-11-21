@@ -4,7 +4,7 @@
 // レンダラーはカスタムスキーム maid:// で配信する（file:// の制限を避け、
 // キャラ動画をストリーミング再生できるようにするため）。
 
-const { app, BrowserWindow, ipcMain, protocol, net } = require('electron');
+const { app, BrowserWindow, ipcMain, protocol, net, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
@@ -45,19 +45,67 @@ function registerProtocol() {
   });
 }
 
+// ---- 右端ドックの3態（レイアウトイメージ正本） ----
+// 最小化＝アイコンのみ／待機（ミニ）＝細い縦バー（キャラは SD）／展開＝メインパネル。
+// ウィンドウはフレームレスで画面右端に貼り付き、大きさと位置はモードごとに
+// メインプロセスが決める（レンダラーはモード切替を依頼するだけ）。
+const DOCK_SIZE = {
+  expanded: { width: 1040, height: 680 },
+  mini: { width: 116, height: 600 },
+  minimized: { width: 60, height: 60 },
+};
+let dockMode = 'expanded';
+
+// モードごとの bounds（右端に貼り付け、縦は作業領域の中央）
+function dockBounds(mode) {
+  const wa = screen.getPrimaryDisplay().workArea;
+  let { width, height } = DOCK_SIZE[mode] || DOCK_SIZE.expanded;
+  width = Math.min(width, wa.width);
+  height = Math.min(height, wa.height);
+  return {
+    x: wa.x + wa.width - width,
+    y: wa.y + Math.round((wa.height - height) / 2),
+    width,
+    height,
+  };
+}
+
+function applyDockMode(mode, { persist = true } = {}) {
+  if (!lifecycle.DOCK_MODES.includes(mode)) return;
+  dockMode = mode;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.setBounds(dockBounds(mode));
+  }
+  if (persist && appState) {
+    appState = structuredClone(appState);
+    appState.settings.dockMode = mode;
+    save();
+  }
+  broadcast();
+}
+
 function createMainWindow() {
   if (mainWindow && !mainWindow.isDestroyed()) {
     if (!mainWindow.isVisible()) mainWindow.show();
     return mainWindow;
   }
-  // スモーク確認では MAID_SMOKE_WIDTH/HEIGHT で小さい表示も再現できる
-  const smokeW = process.env.MAID_SMOKE === '1' ? Number(process.env.MAID_SMOKE_WIDTH || 0) : 0;
-  const smokeH = process.env.MAID_SMOKE === '1' ? Number(process.env.MAID_SMOKE_HEIGHT || 0) : 0;
+  // 初期モードは保存済み設定から復元する。スモーク確認では
+  // MAID_SMOKE_DOCK でモードを、MAID_SMOKE_WIDTH/HEIGHT で展開時の大きさを差し替えられる
+  dockMode = (appState && appState.settings.dockMode) || 'expanded';
+  if (process.env.MAID_SMOKE === '1' && lifecycle.DOCK_MODES.includes(process.env.MAID_SMOKE_DOCK)) {
+    dockMode = process.env.MAID_SMOKE_DOCK;
+  }
+  const bounds = dockBounds(dockMode);
+  if (process.env.MAID_SMOKE === '1' && dockMode === 'expanded') {
+    const smokeW = Number(process.env.MAID_SMOKE_WIDTH || 0);
+    const smokeH = Number(process.env.MAID_SMOKE_HEIGHT || 0);
+    if (smokeW > 0) bounds.width = smokeW;
+    if (smokeH > 0) bounds.height = smokeH;
+  }
   const win = new BrowserWindow({
-    width: smokeW > 0 ? smokeW : 1040,
-    height: smokeH > 0 ? smokeH : 680,
-    minWidth: 880,
-    minHeight: 560,
+    ...bounds,
+    frame: false,
+    resizable: false,
     title: 'スタレゾ日課メイド（仮称）',
     autoHideMenuBar: true,
     webPreferences: {
@@ -105,6 +153,7 @@ function advanceAndSave() {
 function snapshot() {
   return {
     appVersion: APP_VERSION,
+    dockMode,
     settings: appState.settings,
     checks: appState.checks,
     presets: PRESETS,
@@ -125,6 +174,16 @@ function broadcast() {
 }
 
 ipcMain.handle('get-state', () => snapshot());
+
+ipcMain.handle('set-dock-mode', (_e, mode) => {
+  applyDockMode(mode);
+  return snapshot();
+});
+
+ipcMain.handle('quit-app', () => {
+  quitting = true;
+  app.quit();
+});
 
 ipcMain.handle('toggle-check', (_e, { period, itemId }) => {
   appState = lifecycle.toggleCheck(appState, period, itemId);

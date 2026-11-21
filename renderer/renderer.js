@@ -16,12 +16,89 @@ async function refresh() {
 function render() {
   if (!state) return;
   document.getElementById('app-version').textContent = state.appVersion ? `v${state.appVersion}` : '';
+  document.body.dataset.dock = dockMode();
   renderChecklist();
   renderResources();
   layoutForAgent();
   renderCharacter();
+  renderMini();
   renderSettings();
   renderFirstRun();
+  // ミニから設定ボタンで展開した時は、展開が済んでから設定を開く
+  if (pendingOpenSettings && dockMode() === 'expanded') {
+    pendingOpenSettings = false;
+    document.getElementById('settings-overlay').classList.remove('hidden');
+  }
+}
+
+/* ---- 右端ドックの3態（feat/dock-states） ----
+ * 状態の正本はメインプロセス（ウィンドウの大きさ・位置もメインが決める）。
+ * ここでは snapshot の dockMode に合わせて3つのビューを切り替え、
+ * ミニ表示の SD クリップとバッジを描く。 */
+let pendingOpenSettings = false;
+
+function dockMode() {
+  return (state && state.dockMode) || 'expanded';
+}
+
+async function setDock(mode) {
+  state = await window.maid.setDockMode(mode);
+  render();
+}
+
+// ミニ表示：SD クリップ（待機ループ／喜ぶ場面はジャンプ）＋残り件数バッジ。
+// エージェント表示オフの時はキャラを出さず、アイコンボタンだけのバーになる。
+let miniVideo = null;
+let miniClipKind = 'idle';
+
+function playMiniClip(kind) {
+  if (!miniVideo) return;
+  miniClipKind = CLIPS.sd[kind] ? kind : 'idle';
+  const src = CLIPS.sd[miniClipKind];
+  miniVideo.loop = miniClipKind === 'idle';
+  if (miniVideo.getAttribute('src') !== src) miniVideo.setAttribute('src', src);
+  try { miniVideo.currentTime = 0; } catch { /* メタデータ未読込時は無視 */ }
+  const p = miniVideo.play();
+  if (p && typeof p.catch === 'function') p.catch(() => { /* 自動再生不可の環境では静止画のまま */ });
+}
+
+function renderMini() {
+  const wrap = document.getElementById('mini-char');
+  const badge = document.getElementById('mini-badge');
+  if (badge && state && state.presets) {
+    const total = PERIODS.reduce((n, p) => n + remainingOf(p), 0);
+    badge.textContent = String(total);
+    badge.classList.toggle('hidden', total === 0);
+  }
+  if (!wrap) return;
+  if (dockMode() !== 'mini' || !agentEnabled()) {
+    wrap.style.display = 'none';
+    if (miniVideo) { try { miniVideo.pause(); } catch { /* 無視 */ } }
+    return;
+  }
+  wrap.style.display = '';
+  if (!miniVideo) {
+    wrap.innerHTML = '';
+    miniVideo = document.createElement('video');
+    miniVideo.id = 'mini-video';
+    miniVideo.muted = true;
+    miniVideo.autoplay = true;
+    miniVideo.playsInline = true;
+    miniVideo.setAttribute('aria-label', 'モモ（SD）');
+    miniVideo.addEventListener('ended', () => {
+      if (miniClipKind !== 'idle') playMiniClip('idle');
+    });
+    miniVideo.addEventListener('error', () => {
+      wrap.innerHTML = '<div class="avatar-placeholder">モモ</div>';
+      miniVideo = null;
+    });
+    wrap.appendChild(miniVideo);
+    playMiniClip('idle');
+    // 展開側で褒められた直後にミニへ戻ってきたら、SD ジャンプで迎える
+    if (Date.now() - lastPraiseAt < 5000) playMiniClip('praise');
+  } else if (!miniVideo.getAttribute('src') || miniVideo.paused) {
+    playMiniClip(miniClipKind);
+  }
 }
 
 /* ---- チェックリスト（feat/checklist-reset） ---- */
@@ -116,6 +193,7 @@ function renderChecklist() {
 function onItemChecked(period, item, checked, complete) {
   if (!checked) return;
   if (!agentEnabled()) return;
+  lastPraiseAt = Date.now();
   if (complete) {
     say('complete');
     playClip('praise');
@@ -166,11 +244,12 @@ function renderResources() {
   }
 }
 
-/* ---- キャラ表示＋吹き出し（feat/video-display） ----
+/* ---- キャラ表示＋吹き出し（feat/video-display → feat/dock-states） ----
  * モモを動画クリップで表示する（Mesh Avatar から置き換え、2026-11-22 あすか決定）。
  *   起動時：挨拶クリップを1回 → 待機ループ
  *   チェック時／周期の全完了時：褒めるクリップを1回 → 待機へ復帰
- * 表示エリアが小さい時は SD クリップに切り替える（ステージの高さで判定）。
+ * 等身クリップは展開（メイン）表示専用、SD クリップは待機（ミニ）表示専用。
+ * 割当はドックの状態で決まる（旧・ステージの高さによる SD 切替は廃止）。
  * 設定でエージェント表示をオフにすると、キャラ表示と吹き出しは完全に消え、
  * 数値管理はリスト側へ移して管理機能だけが残る。 */
 const CLIPS = {
@@ -185,16 +264,14 @@ const CLIPS = {
     praise: 'assets/momo-sd-jump.mp4',
   },
 };
-// ステージの高さがこれ未満なら「縮小表示」として SD を使う
-const SD_STAGE_HEIGHT = 260;
 
 let videoEl = null;
 let charStarted = false;
 let greeted = false;
-let charMode = 'full'; // 'full' | 'sd'
 let clipKind = 'idle'; // 'idle' | 'greeting' | 'praise'
 let lastLineKind = null;
 let lastLineText = '';
+let lastPraiseAt = 0; // 直近の褒めイベント（ミニへ戻った直後なら SD ジャンプで迎える）
 
 function agentEnabled() {
   return !state || !state.settings || state.settings.showAgent !== false;
@@ -217,12 +294,12 @@ function layoutForAgent() {
 }
 
 function currentClipSrc(kind) {
-  return CLIPS[charMode][kind] || CLIPS[charMode].idle;
+  return CLIPS.full[kind] || CLIPS.full.idle;
 }
 
 function playClip(kind) {
   if (!videoEl || !agentEnabled()) return;
-  clipKind = CLIPS[charMode][kind] ? kind : 'idle';
+  clipKind = CLIPS.full[kind] ? kind : 'idle';
   const src = currentClipSrc(clipKind);
   videoEl.loop = clipKind === 'idle';
   if (videoEl.getAttribute('src') !== src) videoEl.setAttribute('src', src);
@@ -247,6 +324,11 @@ function renderCharacter() {
     stopCharacter();
     return;
   }
+  // 等身クリップは展開表示の時だけ鳴らす（ミニ／最小化では止めておく）
+  if (dockMode() !== 'expanded') {
+    if (videoEl) { try { videoEl.pause(); } catch { /* 無視 */ } }
+    return;
+  }
   const mount = document.getElementById('avatar-frame') || stage;
   if (!charStarted) {
     charStarted = true;
@@ -266,33 +348,16 @@ function renderCharacter() {
       charStarted = false;
     });
     mount.appendChild(videoEl);
-    // 表示エリアの大きさで等身／SD を切り替える
-    if (typeof ResizeObserver === 'function') {
-      new ResizeObserver(() => updateCharMode()).observe(stage);
-    }
-    updateCharMode();
     playClip('idle');
-  } else if (videoEl && !videoEl.getAttribute('src')) {
-    // オフ→オンに戻した時は待機ループから再開する
-    playClip('idle');
+  } else if (videoEl && (!videoEl.getAttribute('src') || videoEl.paused)) {
+    // オフ→オン、または他モードから展開に戻った時は再生を再開する
+    playClip(clipKind);
   }
   if (!greeted && state && state.settings) {
     greeted = true;
     playClip('greeting');
     say('greeting');
   }
-}
-
-// ステージの高さから等身／SD を決め、変わっていたら再生中の種別を引き継いで切り替える
-function updateCharMode() {
-  const stage = document.getElementById('avatar-stage');
-  if (!stage || !videoEl) return;
-  const next = stage.clientHeight < SD_STAGE_HEIGHT ? 'sd' : 'full';
-  if (next === charMode) return;
-  charMode = next;
-  const frame = document.getElementById('avatar-frame');
-  if (frame) frame.classList.toggle('mode-sd', charMode === 'sd');
-  playClip(clipKind === 'idle' ? 'idle' : clipKind);
 }
 
 // 台詞の種別（greeting/praise/complete）から選んで吹き出しに出す。
@@ -467,6 +532,8 @@ function renderFirstRun() {
   const overlay = document.getElementById('firstrun-overlay');
   if (!overlay || !state || !state.settings) return;
   overlay.classList.toggle('hidden', !!state.settings.address);
+  // 初回選択が済んでいない時は、潰れたドック状態で始まっても選択肢が見えるよう展開へ寄せる
+  if (!state.settings.address && dockMode() !== 'expanded') setDock('expanded');
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -487,5 +554,45 @@ window.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-settings-close').addEventListener('click', () => {
     document.getElementById('settings-overlay').classList.add('hidden');
   });
+
+  /* ドックの状態遷移（feat/dock-states）
+   * 展開→ミニ／最小化：ヘッダーのボタン（明示操作）。
+   *   チェック作業中にマウスが外へ出ることは多く、ホバー解除で自動で
+   *   畳むと作業を邪魔するので、戻る操作はボタンに寄せる。
+   * ミニ→展開：バーのホバー（650ms 置く）かクリック（ボタン以外）。
+   * 最小化→ミニ：アイコンのホバー（650ms）かクリック。 */
+  document.getElementById('btn-to-mini').addEventListener('click', () => setDock('mini'));
+  document.getElementById('btn-to-minimized').addEventListener('click', () => setDock('minimized'));
+  document.getElementById('btn-quit').addEventListener('click', () => window.maid.quitApp());
+
+  let hoverTimer = null;
+  const armHover = (el, fn) => {
+    el.addEventListener('mouseenter', () => {
+      clearTimeout(hoverTimer);
+      hoverTimer = setTimeout(fn, 650);
+    });
+    el.addEventListener('mouseleave', () => clearTimeout(hoverTimer));
+  };
+
+  const miniView = document.getElementById('view-mini');
+  armHover(miniView, () => setDock('expanded'));
+  miniView.addEventListener('click', () => setDock('expanded'));
+  document.getElementById('mini-char').addEventListener('click', (e) => {
+    e.stopPropagation(); // キャラをクリックした時は展開せず SD ジャンプ
+    playMiniClip('praise');
+  });
+  document.getElementById('btn-mini-expand').addEventListener('click', (e) => { e.stopPropagation(); setDock('expanded'); });
+  document.getElementById('btn-mini-tasks').addEventListener('click', (e) => { e.stopPropagation(); setDock('expanded'); });
+  document.getElementById('btn-mini-settings').addEventListener('click', (e) => {
+    e.stopPropagation();
+    pendingOpenSettings = true;
+    setDock('expanded');
+  });
+  document.getElementById('btn-mini-minimize').addEventListener('click', (e) => { e.stopPropagation(); setDock('minimized'); });
+
+  const minView = document.getElementById('view-minimized');
+  armHover(minView, () => setDock('mini'));
+  document.getElementById('btn-restore').addEventListener('click', () => setDock('mini'));
+
   refresh();
 });
