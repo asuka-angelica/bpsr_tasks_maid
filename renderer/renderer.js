@@ -50,11 +50,13 @@ async function setDock(mode) {
 // エージェント表示オフの時はキャラを出さず、アイコンボタンだけのバーになる。
 let miniVideo = null;
 let miniClipKind = 'idle';
+let miniCharacter = null;
 
 function playMiniClip(kind) {
   if (!miniVideo) return;
-  miniClipKind = CLIPS.sd[kind] ? kind : 'idle';
-  const src = CLIPS.sd[miniClipKind];
+  const sd = clipsFor(currentCharacterId(), 'sd');
+  miniClipKind = sd[kind] ? kind : 'idle';
+  const src = sd[miniClipKind];
   miniVideo.loop = miniClipKind === 'idle';
   if (miniVideo.getAttribute('src') !== src) miniVideo.setAttribute('src', src);
   try { miniVideo.currentTime = 0; } catch { /* メタデータ未読込時は無視 */ }
@@ -77,19 +79,26 @@ function renderMini() {
     return;
   }
   wrap.style.display = '';
+  wrap.title = currentCharacterLabel();
+  // キャラが切り替わっていたら、SD クリップも新しいキャラのものへ作り替える
+  if (miniVideo && miniCharacter !== currentCharacterId()) {
+    miniVideo = null;
+    wrap.innerHTML = '';
+  }
   if (!miniVideo) {
+    miniCharacter = currentCharacterId();
     wrap.innerHTML = '';
     miniVideo = document.createElement('video');
     miniVideo.id = 'mini-video';
     miniVideo.muted = true;
     miniVideo.autoplay = true;
     miniVideo.playsInline = true;
-    miniVideo.setAttribute('aria-label', 'モモ（SD）');
+    miniVideo.setAttribute('aria-label', `${currentCharacterLabel()}（SD）`);
     miniVideo.addEventListener('ended', () => {
       if (miniClipKind !== 'idle') playMiniClip('idle');
     });
     miniVideo.addEventListener('error', () => {
-      wrap.innerHTML = '<div class="avatar-placeholder">モモ</div>';
+      wrap.innerHTML = `<div class="avatar-placeholder">${currentCharacterLabel()}</div>`;
       miniVideo = null;
     });
     wrap.appendChild(miniVideo);
@@ -244,30 +253,58 @@ function renderResources() {
   }
 }
 
-/* ---- キャラ表示＋吹き出し（feat/video-display → feat/dock-states） ----
- * モモを動画クリップで表示する（Mesh Avatar から置き換え、2026-11-22 あすか決定）。
+/* ---- キャラ表示＋吹き出し（feat/video-display → feat/dock-states → feat/suzuran-video） ----
+ * メイドを動画クリップで表示する（Mesh Avatar から置き換え、2026-11-22 あすか決定）。
  *   起動時：挨拶クリップを1回 → 待機ループ
  *   チェック時／周期の全完了時：褒めるクリップを1回 → 待機へ復帰
  * 等身クリップは展開（メイン）表示専用、SD クリップは待機（ミニ）表示専用。
  * 割当はドックの状態で決まる（旧・ステージの高さによる SD 切替は廃止）。
  * 設定でエージェント表示をオフにすると、キャラ表示と吹き出しは完全に消え、
  * 数値管理はリスト側へ移して管理機能だけが残る。 */
+const CHARACTER_LABELS = { momo: 'モモ', suzuran: 'スズラン', mimoza: 'ミモザ' };
 const CLIPS = {
-  full: {
-    idle: 'assets/momo-idle.mp4', // 0〜4.0s にトリミング済み（煙の崩れ区間を回避）
-    greeting: 'assets/momo-greeting.mp4',
-    praise: 'assets/momo-praise.mp4',
+  momo: {
+    full: {
+      idle: 'assets/momo-idle.mp4', // 0〜4.0s にトリミング済み（煙の崩れ区間を回避）
+      greeting: 'assets/momo-greeting.mp4',
+      praise: 'assets/momo-praise.mp4',
+    },
+    sd: {
+      idle: 'assets/momo-sd-idle.mp4',
+      greeting: null, // SD の挨拶クリップは無いので待機で代用する
+      praise: 'assets/momo-sd-jump.mp4',
+    },
   },
-  sd: {
-    idle: 'assets/momo-sd-idle.mp4',
-    greeting: null, // SD の挨拶クリップは無いので待機で代用する
-    praise: 'assets/momo-sd-jump.mp4',
+  suzuran: {
+    full: {
+      // 待機は原画クリップ 0〜2.0s のクリーン区間（背景変形・カメラ寄りの前）を往復再生化
+      idle: 'assets/suzuran-idle.mp4',
+      greeting: 'assets/suzuran-greeting.mp4', // 0〜7s（お辞儀→復帰まで）
+      praise: 'assets/suzuran-praise.mp4',
+    },
+    sd: {
+      idle: 'assets/suzuran-sd-idle.mp4', // 待機は 0〜2.0s のクリーン区間を往復再生化
+      greeting: null, // SD の挨拶クリップは無いので待機で代用する
+      praise: 'assets/suzuran-sd-jump.mp4',
+    },
   },
 };
+
+function currentCharacterId() {
+  return (state && state.settings && state.settings.character) || 'momo';
+}
+function currentCharacterLabel() {
+  return CHARACTER_LABELS[currentCharacterId()] || 'モモ';
+}
+function clipsFor(character, form) {
+  const set = CLIPS[character] || CLIPS.momo;
+  return set[form] || set.full;
+}
 
 let videoEl = null;
 let charStarted = false;
 let greeted = false;
+let displayedCharacter = null;
 let clipKind = 'idle'; // 'idle' | 'greeting' | 'praise'
 let lastLineKind = null;
 let lastLineText = '';
@@ -294,12 +331,14 @@ function layoutForAgent() {
 }
 
 function currentClipSrc(kind) {
-  return CLIPS.full[kind] || CLIPS.full.idle;
+  const full = clipsFor(currentCharacterId(), 'full');
+  return full[kind] || full.idle;
 }
 
 function playClip(kind) {
   if (!videoEl || !agentEnabled()) return;
-  clipKind = CLIPS.full[kind] ? kind : 'idle';
+  const full = clipsFor(currentCharacterId(), 'full');
+  clipKind = full[kind] ? kind : 'idle';
   const src = currentClipSrc(clipKind);
   videoEl.loop = clipKind === 'idle';
   if (videoEl.getAttribute('src') !== src) videoEl.setAttribute('src', src);
@@ -329,6 +368,13 @@ function renderCharacter() {
     if (videoEl) { try { videoEl.pause(); } catch { /* 無視 */ } }
     return;
   }
+  // キャラが切り替わったら、新しいキャラの挨拶から出し直す
+  if (displayedCharacter !== currentCharacterId()) {
+    displayedCharacter = currentCharacterId();
+    greeted = false;
+    lastLineText = '';
+    if (videoEl) videoEl.setAttribute('aria-label', currentCharacterLabel());
+  }
   const mount = document.getElementById('avatar-frame') || stage;
   if (!charStarted) {
     charStarted = true;
@@ -338,12 +384,12 @@ function renderCharacter() {
     videoEl.muted = true;
     videoEl.autoplay = true;
     videoEl.playsInline = true;
-    videoEl.setAttribute('aria-label', 'モモ');
+    videoEl.setAttribute('aria-label', currentCharacterLabel());
     videoEl.addEventListener('ended', () => {
       if (clipKind !== 'idle') playClip('idle');
     });
     videoEl.addEventListener('error', () => {
-      mount.innerHTML = '<div class="avatar-placeholder">モモ（動画を読み込めませんでした）</div>';
+      mount.innerHTML = `<div class="avatar-placeholder">${currentCharacterLabel()}（動画を読み込めませんでした）</div>`;
       videoEl = null;
       charStarted = false;
     });
@@ -380,7 +426,7 @@ function say(kind) {
 }
 
 /* ---- 設定（feat/settings） ----
- * 呼び方の変更、キャラ選択（モモのみ有効、他は準備中）、
+ * 呼び方の変更、キャラ選択（モモ／スズラン有効、ミモザは準備中）、
  * 2週間周期のアンカー日、項目ごとの通知オン/オフ（保存のみ・発火はフェーズ1）。 */
 function notifyValueOf(item) {
   const saved = state.settings.notify && state.settings.notify[item.id];
@@ -455,7 +501,7 @@ function renderSettings() {
   const charSel = document.createElement('select');
   const chars = [
     { id: 'momo', label: 'モモ', ready: true },
-    { id: 'suzuran', label: 'スズラン（準備中）', ready: false },
+    { id: 'suzuran', label: 'スズラン', ready: true },
     { id: 'mimoza', label: 'ミモザ（準備中）', ready: false },
   ];
   for (const c of chars) {
