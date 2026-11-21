@@ -113,8 +113,46 @@ function renderChecklist() {
 // チェック時のキャラ反応（feat/character で実装）
 function onItemChecked() { /* 後続ブランチで実装 */ }
 
-/* ---- 数値管理（feat/resources） ---- */
-function renderResources() { /* 後続ブランチで実装 */ }
+/* ---- 数値管理（feat/resources-ui） ----
+ * 回復はメイン側が境界で自動加算する。ここは表示と手動の増減だけ。
+ * 上限到達は「満タン」表示で知らせる（通知の発火はフェーズ1）。 */
+function renderResources() {
+  const wrap = document.getElementById('resources');
+  if (!wrap || !state || !state.resources) return;
+  const { defs, values } = state.resources;
+  wrap.innerHTML = '';
+  for (const id of Object.keys(defs)) {
+    const def = defs[id];
+    const value = values[id] || 0;
+    const full = value >= def.max;
+    const row = document.createElement('div');
+    row.className = 'resource-row';
+    const label = document.createElement('span');
+    label.className = 'r-label';
+    label.textContent = def.label;
+    row.appendChild(label);
+    const val = document.createElement('span');
+    val.className = 'r-value' + (full ? ' full' : '');
+    val.textContent = String(value);
+    const max = document.createElement('span');
+    max.className = 'r-max';
+    max.textContent = full ? `/ ${def.max} 満タン` : `/ ${def.max}`;
+    val.appendChild(max);
+    row.appendChild(val);
+    for (const sign of [-1, 1]) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = sign < 0 ? `−${def.step}` : `＋${def.step}`;
+      btn.title = sign < 0 ? '使った分を減らす' : '戻す';
+      btn.addEventListener('click', async () => {
+        state = await window.maid.adjustResource(id, sign * def.step);
+        render();
+      });
+      row.appendChild(btn);
+    }
+    wrap.appendChild(row);
+  }
+}
 
 /* ---- キャラ表示＋吹き出し（feat/character） ---- */
 function renderCharacter() { /* 後続ブランチで実装 */ }
