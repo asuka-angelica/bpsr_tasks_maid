@@ -1,8 +1,8 @@
 'use strict';
 // main.js — Electron メインプロセス（フェーズ0）
 // データはローカルJSONのみ。外部送信は一切しない（ガーディアンと同じ原則）。
-// レンダラーはカスタムスキーム maid:// で配信する（file:// の fetch 制限を避け、
-// mesh-avatar ランタイムが .mavatar を fetch で読めるようにするため）。
+// レンダラーはカスタムスキーム maid:// で配信する（file:// の制限を避け、
+// キャラ動画をストリーミング再生できるようにするため）。
 
 const { app, BrowserWindow, ipcMain, protocol, net } = require('electron');
 const path = require('path');
@@ -50,9 +50,12 @@ function createMainWindow() {
     if (!mainWindow.isVisible()) mainWindow.show();
     return mainWindow;
   }
+  // スモーク確認では MAID_SMOKE_WIDTH/HEIGHT で小さい表示も再現できる
+  const smokeW = process.env.MAID_SMOKE === '1' ? Number(process.env.MAID_SMOKE_WIDTH || 0) : 0;
+  const smokeH = process.env.MAID_SMOKE === '1' ? Number(process.env.MAID_SMOKE_HEIGHT || 0) : 0;
   const win = new BrowserWindow({
-    width: 1040,
-    height: 680,
+    width: smokeW > 0 ? smokeW : 1040,
+    height: smokeH > 0 ? smokeH : 680,
     minWidth: 880,
     minHeight: 560,
     title: 'スタレゾ日課メイド（仮称）',
@@ -144,6 +147,14 @@ ipcMain.handle('set-address', (_e, value) => {
     save();
     broadcast();
   }
+  return snapshot();
+});
+
+ipcMain.handle('set-show-agent', (_e, value) => {
+  appState = structuredClone(appState);
+  appState.settings.showAgent = !!value;
+  save();
+  broadcast();
   return snapshot();
 });
 

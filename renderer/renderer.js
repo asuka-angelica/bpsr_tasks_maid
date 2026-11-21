@@ -18,6 +18,7 @@ function render() {
   document.getElementById('app-version').textContent = state.appVersion ? `v${state.appVersion}` : '';
   renderChecklist();
   renderResources();
+  layoutForAgent();
   renderCharacter();
   renderSettings();
   renderFirstRun();
@@ -110,15 +111,17 @@ function renderChecklist() {
   }
 }
 
-// チェック時のキャラ反応：チェックで褒め＋笑顔、その周期の全完了で特別な褒め
+// チェック時のキャラ反応：チェックで褒めクリップ、その周期の全完了で特別な褒め。
+// エージェント表示オフの時はキャラ依存の振る舞いを一切出さない。
 function onItemChecked(period, item, checked, complete) {
   if (!checked) return;
+  if (!agentEnabled()) return;
   if (complete) {
     say('complete');
-    reactAvatar('smile', 3500);
+    playClip('praise');
   } else {
     say('praise');
-    reactAvatar('smile', 2200);
+    playClip('praise');
   }
 }
 
@@ -163,46 +166,139 @@ function renderResources() {
   }
 }
 
-/* ---- キャラ表示＋吹き出し（feat/character） ----
- * モモ（momo3.mavatar）を mesh-avatar コンポーネントで表示し、
- * アイドルモーションで常駐させる。表情は Viewer と同じ API
- * （setExpression / setParameters）で切り替える。 */
-let avatar = null;
-let avatarStarted = false;
+/* ---- キャラ表示＋吹き出し（feat/video-display） ----
+ * モモを動画クリップで表示する（Mesh Avatar から置き換え、2026-11-22 あすか決定）。
+ *   起動時：挨拶クリップを1回 → 待機ループ
+ *   チェック時／周期の全完了時：褒めるクリップを1回 → 待機へ復帰
+ * 表示エリアが小さい時は SD クリップに切り替える（ステージの高さで判定）。
+ * 設定でエージェント表示をオフにすると、キャラ表示と吹き出しは完全に消え、
+ * 数値管理はリスト側へ移して管理機能だけが残る。 */
+const CLIPS = {
+  full: {
+    idle: 'assets/momo-idle.mp4', // 0〜4.0s にトリミング済み（煙の崩れ区間を回避）
+    greeting: 'assets/momo-greeting.mp4',
+    praise: 'assets/momo-praise.mp4',
+  },
+  sd: {
+    idle: 'assets/momo-sd-idle.mp4',
+    greeting: null, // SD の挨拶クリップは無いので待機で代用する
+    praise: 'assets/momo-sd-jump.mp4',
+  },
+};
+// ステージの高さがこれ未満なら「縮小表示」として SD を使う
+const SD_STAGE_HEIGHT = 260;
+
+let videoEl = null;
+let charStarted = false;
 let greeted = false;
+let charMode = 'full'; // 'full' | 'sd'
+let clipKind = 'idle'; // 'idle' | 'greeting' | 'praise'
 let lastLineKind = null;
 let lastLineText = '';
+
+function agentEnabled() {
+  return !state || !state.settings || state.settings.showAgent !== false;
+}
+
+// エージェント表示オフ：キャラ列を畳み、数値管理はリスト列へ移す（管理機能は残す）
+function layoutForAgent() {
+  const off = !agentEnabled();
+  document.body.classList.toggle('agent-off', off);
+  const res = document.getElementById('resources');
+  const charCol = document.querySelector('.char-column');
+  const listCol = document.querySelector('.list-column');
+  const checkList = document.getElementById('check-list');
+  if (!res || !charCol || !listCol || !checkList) return;
+  if (off) {
+    if (res.parentElement !== listCol) listCol.insertBefore(res, checkList);
+  } else if (res.parentElement !== charCol) {
+    charCol.appendChild(res);
+  }
+}
+
+function currentClipSrc(kind) {
+  return CLIPS[charMode][kind] || CLIPS[charMode].idle;
+}
+
+function playClip(kind) {
+  if (!videoEl || !agentEnabled()) return;
+  clipKind = CLIPS[charMode][kind] ? kind : 'idle';
+  const src = currentClipSrc(clipKind);
+  videoEl.loop = clipKind === 'idle';
+  if (videoEl.getAttribute('src') !== src) videoEl.setAttribute('src', src);
+  try { videoEl.currentTime = 0; } catch { /* メタデータ未読込時は無視 */ }
+  const p = videoEl.play();
+  if (p && typeof p.catch === 'function') p.catch(() => { /* 自動再生不可の環境では静止画のまま */ });
+}
+
+function stopCharacter() {
+  if (videoEl) {
+    try { videoEl.pause(); } catch { /* 無視 */ }
+    videoEl.removeAttribute('src');
+    try { videoEl.load(); } catch { /* 無視 */ }
+  }
+  clipKind = 'idle';
+}
 
 function renderCharacter() {
   const stage = document.getElementById('avatar-stage');
   if (!stage) return;
-  // 描画先は正方形の枠（avatar-frame）。無ければステージ自体に描く。
+  if (!agentEnabled()) {
+    stopCharacter();
+    return;
+  }
   const mount = document.getElementById('avatar-frame') || stage;
-  if (!avatarStarted) {
-    avatarStarted = true;
+  if (!charStarted) {
+    charStarted = true;
     mount.innerHTML = '';
-    const el = document.createElement('mesh-avatar');
-    el.id = 'avatar';
-    el.setAttribute('src', 'assets/momo3.mavatar');
-    el.setAttribute('label', 'モモのアバター');
-    mount.appendChild(el);
-    const script = document.createElement('script');
-    script.src = 'assets/mesh-avatar.js';
-    document.body.appendChild(script);
-    el.addEventListener('load', (ev) => { avatar = ev.detail.avatar; });
-    el.addEventListener('error', () => {
-      mount.innerHTML = '<div class="avatar-placeholder">モモ（読み込みに失敗しました）</div>';
+    videoEl = document.createElement('video');
+    videoEl.id = 'char-video';
+    videoEl.muted = true;
+    videoEl.autoplay = true;
+    videoEl.playsInline = true;
+    videoEl.setAttribute('aria-label', 'モモ');
+    videoEl.addEventListener('ended', () => {
+      if (clipKind !== 'idle') playClip('idle');
     });
+    videoEl.addEventListener('error', () => {
+      mount.innerHTML = '<div class="avatar-placeholder">モモ（動画を読み込めませんでした）</div>';
+      videoEl = null;
+      charStarted = false;
+    });
+    mount.appendChild(videoEl);
+    // 表示エリアの大きさで等身／SD を切り替える
+    if (typeof ResizeObserver === 'function') {
+      new ResizeObserver(() => updateCharMode()).observe(stage);
+    }
+    updateCharMode();
+    playClip('idle');
+  } else if (videoEl && !videoEl.getAttribute('src')) {
+    // オフ→オンに戻した時は待機ループから再開する
+    playClip('idle');
   }
   if (!greeted && state && state.settings) {
     greeted = true;
+    playClip('greeting');
     say('greeting');
   }
+}
+
+// ステージの高さから等身／SD を決め、変わっていたら再生中の種別を引き継いで切り替える
+function updateCharMode() {
+  const stage = document.getElementById('avatar-stage');
+  if (!stage || !videoEl) return;
+  const next = stage.clientHeight < SD_STAGE_HEIGHT ? 'sd' : 'full';
+  if (next === charMode) return;
+  charMode = next;
+  const frame = document.getElementById('avatar-frame');
+  if (frame) frame.classList.toggle('mode-sd', charMode === 'sd');
+  playClip(clipKind === 'idle' ? 'idle' : clipKind);
 }
 
 // 台詞の種別（greeting/praise/complete）から選んで吹き出しに出す。
 // 直前と同じ文は避ける（カーナビ式のバリエーションを活かす）。
 function say(kind) {
+  if (!agentEnabled()) return;
   if (!state || !state.lines) return;
   const address = state.settings.address || 'ご主人様';
   const arr = state.lines[kind] || [];
@@ -218,17 +314,6 @@ function say(kind) {
   document.getElementById('bubble-text').textContent = text;
 }
 
-function reactAvatar(expression, ms) {
-  if (!avatar) return;
-  try {
-    avatar.setExpression(expression);
-    setTimeout(() => {
-      if (!avatar) return;
-      try { avatar.setExpression('neutral'); avatar.setParameters({}); } catch { /* 復帰失敗は無視 */ }
-    }, ms);
-  } catch { /* 表情が使えない環境では吹き出しだけ */ }
-}
-
 /* ---- 設定（feat/settings） ----
  * 呼び方の変更、キャラ選択（モモのみ有効、他は準備中）、
  * 2週間周期のアンカー日、項目ごとの通知オン/オフ（保存のみ・発火はフェーズ1）。 */
@@ -242,6 +327,31 @@ function renderSettings() {
   const body = document.getElementById('settings-body');
   if (!body || !state || !state.settings) return;
   body.innerHTML = '';
+
+  const hAgent = document.createElement('h3');
+  hAgent.textContent = 'エージェント';
+  body.appendChild(hAgent);
+  const agentRow = document.createElement('div');
+  agentRow.className = 'setting-row';
+  const agentLabel = document.createElement('span');
+  agentLabel.className = 's-label';
+  agentLabel.textContent = 'エージェント表示（オフにすると管理機能だけになります）';
+  agentRow.appendChild(agentLabel);
+  const agentSw = document.createElement('label');
+  agentSw.className = 'switch';
+  const agentInput = document.createElement('input');
+  agentInput.type = 'checkbox';
+  agentInput.checked = agentEnabled();
+  agentInput.addEventListener('change', async () => {
+    state = await window.maid.setShowAgent(agentInput.checked);
+    render();
+  });
+  const agentTrack = document.createElement('span');
+  agentTrack.className = 'track';
+  agentSw.appendChild(agentInput);
+  agentSw.appendChild(agentTrack);
+  agentRow.appendChild(agentSw);
+  body.appendChild(agentRow);
 
   const hAddr = document.createElement('h3');
   hAddr.textContent = '呼び方';
