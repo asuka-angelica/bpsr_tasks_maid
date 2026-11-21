@@ -110,8 +110,17 @@ function renderChecklist() {
   }
 }
 
-// チェック時のキャラ反応（feat/character で実装）
-function onItemChecked() { /* 後続ブランチで実装 */ }
+// チェック時のキャラ反応：チェックで褒め＋笑顔、その周期の全完了で特別な褒め
+function onItemChecked(period, item, checked, complete) {
+  if (!checked) return;
+  if (complete) {
+    say('complete');
+    reactAvatar('smile', 3500);
+  } else {
+    say('praise');
+    reactAvatar('smile', 2200);
+  }
+}
 
 /* ---- 数値管理（feat/resources-ui） ----
  * 回復はメイン側が境界で自動加算する。ここは表示と手動の増減だけ。
@@ -154,9 +163,69 @@ function renderResources() {
   }
 }
 
-/* ---- キャラ表示＋吹き出し（feat/character） ---- */
-function renderCharacter() { /* 後続ブランチで実装 */ }
-function say() { /* 後続ブランチで実装 */ }
+/* ---- キャラ表示＋吹き出し（feat/character） ----
+ * モモ（momo3.mavatar）を mesh-avatar コンポーネントで表示し、
+ * アイドルモーションで常駐させる。表情は Viewer と同じ API
+ * （setExpression / setParameters）で切り替える。 */
+let avatar = null;
+let avatarStarted = false;
+let greeted = false;
+let lastLineKind = null;
+let lastLineText = '';
+
+function renderCharacter() {
+  const stage = document.getElementById('avatar-stage');
+  if (!stage) return;
+  if (!avatarStarted) {
+    avatarStarted = true;
+    stage.innerHTML = '';
+    const el = document.createElement('mesh-avatar');
+    el.id = 'avatar';
+    el.setAttribute('src', 'assets/momo3.mavatar');
+    el.setAttribute('label', 'モモのアバター');
+    stage.appendChild(el);
+    const script = document.createElement('script');
+    script.src = 'assets/mesh-avatar.js';
+    document.body.appendChild(script);
+    el.addEventListener('load', (ev) => { avatar = ev.detail.avatar; });
+    el.addEventListener('error', () => {
+      stage.innerHTML = '<div class="avatar-placeholder">モモ（読み込みに失敗しました）</div>';
+    });
+  }
+  if (!greeted && state && state.settings) {
+    greeted = true;
+    say('greeting');
+  }
+}
+
+// 台詞の種別（greeting/praise/complete）から選んで吹き出しに出す。
+// 直前と同じ文は避ける（カーナビ式のバリエーションを活かす）。
+function say(kind) {
+  if (!state || !state.lines) return;
+  const address = state.settings.address || 'ご主人様';
+  const arr = state.lines[kind] || [];
+  if (arr.length === 0) return;
+  let text = '';
+  for (let i = 0; i < 5; i++) {
+    const raw = arr[Math.floor(Math.random() * arr.length)];
+    text = raw.split('{address}').join(address);
+    if (text !== lastLineText || arr.length === 1) break;
+  }
+  lastLineKind = kind;
+  lastLineText = text;
+  document.getElementById('bubble-text').textContent = text;
+}
+
+function reactAvatar(expression, ms) {
+  if (!avatar) return;
+  try {
+    avatar.setExpression(expression);
+    setTimeout(() => {
+      if (!avatar) return;
+      try { avatar.setExpression('neutral'); avatar.setParameters({}); } catch { /* 復帰失敗は無視 */ }
+    }, ms);
+  } catch { /* 表情が使えない環境では吹き出しだけ */ }
+}
 
 /* ---- 設定（feat/settings） ---- */
 function renderSettings() { /* 後続ブランチで実装 */ }
