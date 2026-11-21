@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>スタレゾ日課メイド（仮称）</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="app-title">スタレゾ日課メイド <span class="app-version" id="app-version"></span></div>
+    <button id="btn-settings" class="icon-btn" type="button" title="設定" aria-label="設定">
+      <!-- placeholder: gear icon (see docs/PLACEHOLDERS.md) -->
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M12 8.5A3.5 3.5 0 1 0 12 15.5 3.5 3.5 0 0 0 12 8.5zm9 3.5-2 .5a7 7 0 0 1-.6 1.4l1.1 1.8-1.4 1.4-1.8-1.1a7 7 0 0 1-1.4.6l-.5 2h-2l-.5-2a7 7 0 0 1-1.4-.6L3.9 17.1 2.5 15.7l1.1-1.8A7 7 0 0 1 3 12.5l-2-.5 0-2 2-.5a7 7 0 0 1 .6-1.4L2.5 6.3 3.9 4.9l1.8 1.1a7 7 0 0 1 1.4-.6l.5-2h2l.5 2a7 7 0 0 1 1.4.6l1.8-1.1 1.4 1.4-1.1 1.8a7 7 0 0 1 .6 1.4l2 .5z" transform="scale(0.92) translate(1,1)"/></svg>
+    </button>
+  </header>
+
+  <main class="layout">
+    <section class="char-column">
+      <div class="avatar-stage" id="avatar-stage">
+        <!-- キャラ表示（feat/character で mesh-avatar を組み込む） -->
+        <div class="avatar-placeholder" id="avatar-placeholder">モモ（準備中）</div>
+      </div>
+      <div class="bubble" id="bubble"><p id="bubble-text">…</p></div>
+      <div class="resources" id="resources">
+        <!-- 数値管理（feat/resources で組み込む） -->
+      </div>
+    </section>
+
+    <section class="list-column">
+      <nav class="tabs" id="tabs" aria-label="周期タブ"></nav>
+      <div class="progress-wrap">
+        <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+        <div class="progress-text" id="progress-text"></div>
+      </div>
+      <div class="check-list" id="check-list"></div>
+    </section>
+  </main>
+
+  <div class="overlay hidden" id="settings-overlay">
+    <div class="panel" role="dialog" aria-label="設定">
+      <div class="panel-header">
+        <h2>設定</h2>
+        <button id="btn-settings-close" class="icon-btn" type="button" aria-label="閉じる">✕</button>
+      </div>
+      <div class="panel-body" id="settings-body"><!-- feat/settings で組み込む --></div>
+    </div>
+  </div>
+
+  <div class="overlay hidden" id="firstrun-overlay">
+    <div class="panel firstrun" role="dialog" aria-label="はじめの設定">
+      <h2>はじめまして</h2>
+      <p>わたしのことは、どちらの呼び方でお呼びすればよいですか？</p>
+      <div class="firstrun-choices">
+        <button type="button" class="choice-btn" data-address="ご主人様">ご主人様</button>
+        <button type="button" class="choice-btn" data-address="お嬢様">お嬢様</button>
+      </div>
+      <p class="note">あとから設定で変更できます。</p>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
