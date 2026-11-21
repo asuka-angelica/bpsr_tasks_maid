@@ -64,12 +64,12 @@ body {
   display: flex;
   position: relative;
 }
-/* 正方形の枠：高さは「ステージの高さ」と「カラム幅」の小さい方に合わせ、
- * aspect-ratio で幅を決める。ウィンドウが低くても正方形のまま縮み、
- * アバターが枠の上下で中途半端に切れることがない。 */
+/* 動画の枠：等身クリップ（768×1152 = 2:3）に合わせたアスペクトで、
+ * 高さはステージいっぱい（上限はカラム幅×1.5）にし、幅は max-width で抑える。
+ * 縮小表示（SD クリップ 960×960）の時は mode-sd で 1:1 に切り替わる。 */
 .avatar-frame {
-  height: min(100%, var(--char-w));
-  aspect-ratio: 1 / 1;
+  height: min(100%, calc(var(--char-w) * 1.5));
+  aspect-ratio: 2 / 3;
   max-width: 100%;
   margin: auto;
   border: 1px solid var(--line);
@@ -79,8 +79,16 @@ body {
   overflow: hidden;
   position: relative;
 }
-.avatar-frame mesh-avatar { display: block; width: 100%; height: 100%; }
+.avatar-frame.mode-sd {
+  height: min(100%, var(--char-w));
+  aspect-ratio: 1 / 1;
+}
+.avatar-frame video { display: block; width: 100%; height: 100%; object-fit: cover; }
 .avatar-placeholder { color: var(--ink-soft); font-size: 14px; }
+/* エージェント表示オフ：キャラ列を完全に消し、リスト側が幅を使う。
+ * 数値管理は JS がリスト列へ移すので、管理機能はそのまま残る。 */
+body.agent-off .char-column { display: none; }
+.list-column > .resources { flex: 0 0 auto; }
 .bubble {
   flex: 0 0 auto;
   background: #fdfaff;

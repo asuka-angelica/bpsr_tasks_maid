@@ -16,6 +16,7 @@ function defaultState(now, anchor = DEFAULT_ANCHOR) {
     settings: {
       address: null, // 'ご主人様' | 'お嬢様'（初回選択までは null）
       character: 'momo',
+      showAgent: true, // エージェント（キャラ表示）のオン/オフ。管理専用ではオフにできる
       notify: {}, // itemId -> bool（未設定はプリセットの既定に従う）
       biweeklyAnchor: anchor,
     },

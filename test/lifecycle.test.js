@@ -83,3 +83,11 @@ test('normalizeState: 壊れた・欠けたデータでも既定で埋まる', (
   assert.deepEqual(s.resources.values, { bossKey: 6, eliteKey: 6, focus: 2000 });
   assert.equal(normalizeState(null, D(2026, 11, 21, 10)).settings.character, 'momo');
 });
+
+test('showAgent: 既定はオン、保存済みのオフは保持され、欠けていればオンで埋まる', () => {
+  assert.equal(defaultState(D(2026, 11, 21, 10)).settings.showAgent, true);
+  const off = normalizeState({ settings: { showAgent: false } }, D(2026, 11, 21, 10));
+  assert.equal(off.settings.showAgent, false);
+  const missing = normalizeState({ settings: {} }, D(2026, 11, 21, 10));
+  assert.equal(missing.settings.showAgent, true);
+});
