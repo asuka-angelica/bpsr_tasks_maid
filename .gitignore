@@ -2,3 +2,7 @@ node_modules/
 dist/
 *.log
 .DS_Store
+
+# ボイスパック（音声ファイルは repo に入れない。配置先は README の「ボイスパック」参照）
+voice/
+renderer/assets/voice/
