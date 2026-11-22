@@ -213,12 +213,19 @@ function snapshot() {
   const chars = resolvedCharacters();
   const currentDef = currentCharacterDef(chars.characters);
   const voice = scanVoicePack(voiceDirPath(), chars.characters.map((c) => c.id));
+  // 表示形式はここで実効値に解決して渡す。両形式の素材を持つキャラ
+  // （組み込み3人）は設定 settings.displayFormat（既定は立ち絵）に従い、
+  // レンダラー側は type を見るだけでよい。定義そのものは書き換えない。
+  const displayCharacters = chars.characters.map((c) => ({
+    ...c,
+    type: charactersModule.effectiveDisplayType(c, appState.settings),
+  }));
   return {
     appVersion: APP_VERSION,
     dockMode,
     voiceAvailable: voice.available,
     voiceFiles: voice.files,
-    characters: chars.characters,
+    characters: displayCharacters,
     characterErrors: chars.errors,
     address: charactersModule.resolveAddress(currentDef, appState.settings),
     settings: appState.settings,
@@ -341,6 +348,16 @@ ipcMain.handle('set-show-bubble', guard((_e, value) => {
   appState.settings.showBubble = !!value;
   save();
   broadcast();
+  return snapshot();
+}));
+
+ipcMain.handle('set-display-format', guard((_e, value) => {
+  if (charactersModule.DISPLAY_FORMATS.includes(value)) {
+    appState = structuredClone(appState);
+    appState.settings.displayFormat = value;
+    save();
+    broadcast();
+  }
   return snapshot();
 }));
 

@@ -5,6 +5,7 @@
 
 const { PERIODS, periodKey, dailyBoundariesCrossed } = require('./cycles');
 const { DEFAULT_VALUES, applyRecovery, adjustValue } = require('./resources');
+const { DISPLAY_FORMATS, DEFAULT_DISPLAY_FORMAT } = require('./characters');
 
 const DEFAULT_ANCHOR = '2026-11-16'; // 2週間周期のアンカー（月曜）
 
@@ -21,6 +22,7 @@ function defaultState(now, anchor = DEFAULT_ANCHOR) {
       address: null, // 'ご主人様' | 'お嬢様'（初回選択までは null）
       characterAddress: {}, // キャラID -> そのキャラ専用の呼び方（未設定は全体設定に従う）
       character: 'momo',
+      displayFormat: DEFAULT_DISPLAY_FORMAT, // 表示形式（両形式を持つキャラ用）。既定は立ち絵＋表情差分
       showAgent: true, // エージェント（キャラ表示）のオン/オフ。管理専用ではオフにできる
       voiceEnabled: true, // ボイス再生のオン/オフ（挨拶・褒め・全完了。再生自体はフェーズ1）
       showBubble: true, // 吹き出し（台詞表示）のオン/オフ。オフでもキャラ表示は残る
@@ -51,6 +53,11 @@ function normalizeState(raw, now) {
   };
   // dockMode は想定外の値を既定へ戻す（壊れた保存データで表示が消えないように）
   if (!DOCK_MODES.includes(out.settings.dockMode)) out.settings.dockMode = DEFAULT_DOCK_MODE;
+  // displayFormat も同様に、想定外の値は既定（立ち絵）へ戻す。
+  // 保存済みの正しい値はそのまま尊重する（既定で上書きしない）。
+  if (!DISPLAY_FORMATS.includes(out.settings.displayFormat)) {
+    out.settings.displayFormat = DEFAULT_DISPLAY_FORMAT;
+  }
   for (const p of PERIODS) {
     const c = raw.checks && raw.checks[p];
     out.checks[p] = c && typeof c.key === 'string'

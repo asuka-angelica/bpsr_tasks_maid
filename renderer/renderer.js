@@ -57,6 +57,7 @@ async function setDock(mode) {
 let miniVideo = null;
 let miniClipKind = 'idle';
 let miniCharacter = null;
+let miniDisplayType = null; // ミニ表示中の形式（キャラ・形式が変わったら作り替える）
 // メイン表示と同じく、切替の直列化と段階復帰で割り込みエラーを防ぐ
 let miniInFlight = false;
 let pendingMiniKind = null;
@@ -275,8 +276,10 @@ function renderMini() {
   }
   wrap.style.display = '';
   wrap.title = currentCharacterLabel();
-  // キャラが切り替わっていたら、ミニ表示も新しいキャラのものへ作り替える
-  if (miniCharacter !== currentCharacterId()) {
+  // キャラが切り替わっていたら、ミニ表示も新しいキャラのものへ作り替える。
+  // 表示形式（立ち絵／動画）が切り替わった時も同様に作り替える。
+  if (miniCharacter !== currentCharacterId() || miniDisplayType !== displayType()) {
+    miniDisplayType = displayType();
     mediaEpoch++; // 前キャラ向けの非同期完了を無効化する
     miniVideo = null;
     miniImgEl = null;
@@ -576,6 +579,7 @@ let videoEl = null;
 let charStarted = false;
 let greeted = false;
 let displayedCharacter = null;
+let displayedType = null; // 表示中の形式（設定で切り替わったら表示要素を作り替える）
 let clipKind = 'idle'; // 'idle' | 'greeting' | 'praise'
 let lastLineKind = null;
 let lastLineText = '';
@@ -831,9 +835,12 @@ function renderCharacter() {
     stopCharacter();
     return;
   }
-  // キャラが切り替わったら、前キャラの表示要素を片付けて挨拶から出し直す
-  if (displayedCharacter !== currentCharacterId()) {
+  // キャラが切り替わったら、前キャラの表示要素を片付けて挨拶から出し直す。
+  // 表示形式（立ち絵／動画）が切り替わった時も同じく作り替える
+  // （前の形式の要素が残ると、戻した時に外れた要素を触ってしまうため）。
+  if (displayedCharacter !== currentCharacterId() || displayedType !== displayType()) {
     displayedCharacter = currentCharacterId();
+    displayedType = displayType();
     greeted = false;
     lastLineText = '';
     stopCharacter();
@@ -1021,7 +1028,7 @@ function renderRegistrationForm(body) {
   const typeSel = regEl('select');
   const typeOpts = [
     ['video', 'アニメーション（動画：mp4 / webm）'],
-    ['image', '立ち絵（＋表情差分）'],
+    ['image', '立ち絵（＋表情差分）（既定）'],
     ['live2d', 'Live2D（登録・検出のみ／再生は未対応）'],
   ];
   for (const [v, label] of typeOpts) {
@@ -1228,6 +1235,33 @@ function renderSettings() {
     bubbleEnabled(),
     (v) => window.maid.setShowBubble(v),
   ));
+
+  // 表示形式（立ち絵＋表情差分／動画）。両形式の素材を持つキャラ
+  // （組み込み3人）にだけ効く設定で、既定は立ち絵。動画も選択肢として残す。
+  const fmtRow = document.createElement('div');
+  fmtRow.className = 'setting-row';
+  const fmtLabel = document.createElement('span');
+  fmtLabel.className = 's-label';
+  fmtLabel.textContent = '表示形式（立ち絵と動画の両方があるキャラ用）';
+  fmtRow.appendChild(fmtLabel);
+  const fmtSel = document.createElement('select');
+  const curFmt = state.settings.displayFormat === 'video' ? 'video' : 'image';
+  for (const [v, label] of [
+    ['image', '立ち絵＋表情差分（既定）'],
+    ['video', 'アニメーション（動画）'],
+  ]) {
+    const opt = document.createElement('option');
+    opt.value = v;
+    opt.textContent = label;
+    if (curFmt === v) opt.selected = true;
+    fmtSel.appendChild(opt);
+  }
+  fmtSel.addEventListener('change', async () => {
+    state = await window.maid.setDisplayFormat(fmtSel.value);
+    render();
+  });
+  fmtRow.appendChild(fmtSel);
+  body.appendChild(fmtRow);
 
   const hAddr = document.createElement('h3');
   hAddr.textContent = '呼び方';
