@@ -283,6 +283,12 @@ app.whenReady().then(() => {
     mainWindow.webContents.once('did-finish-load', () => {
       setTimeout(async () => {
         try {
+          if (process.env.MAID_SMOKE_SETTINGS === '1') {
+            await mainWindow.webContents.executeJavaScript(
+              "document.getElementById('settings-overlay').classList.remove('hidden')",
+            );
+            await new Promise((r) => setTimeout(r, 600));
+          }
           const img = await mainWindow.webContents.capturePage();
           fs.writeFileSync(out, img.toPNG());
           console.log('[smoke] captured:', out);

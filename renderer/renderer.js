@@ -278,40 +278,40 @@ function renderResources() {
  * 数値管理はリスト側へ移して管理機能だけが残る。 */
 const CHARACTER_LABELS = { momo: 'モモ', suzuran: 'スズラン', mimoza: 'ミモザ' };
 const CLIPS = {
+  // クリップは 2026-11-22 に新原画（シート→Codex の透過静止画）から作り直した版。
+  // 待機はクリーン区間の往復再生化、挨拶は動作が収まる範囲へトリミング済み。
   momo: {
     full: {
-      idle: 'assets/momo-idle.mp4', // 0〜4.0s にトリミング済み（煙の崩れ区間を回避）
-      greeting: 'assets/momo-greeting.mp4',
+      idle: 'assets/momo-idle.mp4', // クリーン区間 0〜5s を往復再生化
+      greeting: 'assets/momo-greeting.mp4', // 0〜8.5s（お辞儀→復帰まで）
       praise: 'assets/momo-praise.mp4',
     },
     sd: {
-      idle: 'assets/momo-sd-idle.mp4',
+      idle: 'assets/momo-sd-idle.mp4', // クリーン区間 0〜4s を往復再生化（後半はカメラの寄り）
       greeting: null, // SD の挨拶クリップは無いので待機で代用する
       praise: 'assets/momo-sd-jump.mp4',
     },
   },
   suzuran: {
     full: {
-      // 待機は原画クリップ 0〜2.0s のクリーン区間（背景変形・カメラ寄りの前）を往復再生化
-      idle: 'assets/suzuran-idle.mp4',
-      greeting: 'assets/suzuran-greeting.mp4', // 0〜7s（お辞儀→復帰まで）
+      idle: 'assets/suzuran-idle.mp4', // クリーン区間 6.0〜9.95s を往復再生化（冒頭は画角が落ち着くまで不安定）
+      greeting: 'assets/suzuran-greeting.mp4',
       praise: 'assets/suzuran-praise.mp4',
     },
     sd: {
-      idle: 'assets/suzuran-sd-idle.mp4', // 待機は 0〜2.0s のクリーン区間を往復再生化
+      idle: 'assets/suzuran-sd-idle.mp4', // 0.5〜5.5s を往復再生化
       greeting: null, // SD の挨拶クリップは無いので待機で代用する
-      praise: 'assets/suzuran-sd-jump.mp4',
+      praise: 'assets/suzuran-sd-jump.mp4', // 冒頭の寄りを避けて 1〜10s
     },
   },
   mimoza: {
     full: {
-      // 待機は原画クリップ 0〜3.0s の区間を往復再生化（全区間クリーンだったがループ用に抜粋）
-      idle: 'assets/mimosa-idle.mp4',
-      greeting: 'assets/mimosa-greeting.mp4', // 0〜8s（お辞儀→復帰まで）
+      idle: 'assets/mimosa-idle.mp4', // クリーン区間 5.0〜9.5s を往復再生化
+      greeting: 'assets/mimosa-greeting.mp4', // 0〜9.8s（お辞儀→復帰まで）
       praise: 'assets/mimosa-praise.mp4',
     },
     sd: {
-      idle: 'assets/mimosa-sd-idle.mp4', // 待機は 0〜3.0s のクリーン区間を往復再生化
+      idle: 'assets/mimosa-sd-idle.mp4', // クリーン区間 2.0〜7.0s を往復再生化
       greeting: null, // SD の挨拶クリップは無いので待機で代用する
       praise: 'assets/mimosa-sd-jump.mp4',
     },
