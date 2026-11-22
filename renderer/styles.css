@@ -119,9 +119,14 @@ body.agent-off .char-column { display: none; }
 .bubble p { margin: 0; font-size: 14px; line-height: 1.5; }
 .resources { flex: 0 0 auto; display: flex; flex-direction: column; gap: 8px; }
 .resource-row {
-  display: flex; align-items: center; gap: 8px;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   border: 1px solid var(--line); border-radius: 12px;
   background: var(--panel); padding: 7px 10px;
+}
+.resource-row .r-warn {
+  flex: 1 1 100%;
+  font-size: 12.5px; font-weight: 700; line-height: 1.45;
+  color: #ffb35c;
 }
 .resource-row .r-label { font-size: 13px; color: var(--ink-soft); flex: 0 0 64px; }
 .resource-row .r-value { font-size: 17px; font-weight: 700; flex: 1 1 auto; }

@@ -21,6 +21,8 @@ function defaultState(now, anchor = DEFAULT_ANCHOR) {
       address: null, // 'ご主人様' | 'お嬢様'（初回選択までは null）
       character: 'momo',
       showAgent: true, // エージェント（キャラ表示）のオン/オフ。管理専用ではオフにできる
+      voiceEnabled: true, // ボイス再生のオン/オフ（挨拶・褒め・全完了。再生自体はフェーズ1）
+      showBubble: true, // 吹き出し（台詞表示）のオン/オフ。オフでもキャラ表示は残る
       dockMode: DEFAULT_DOCK_MODE, // ドックの表示状態（expanded/mini/minimized）
       notify: {}, // itemId -> bool（未設定はプリセットの既定に従う）
       biweeklyAnchor: anchor,

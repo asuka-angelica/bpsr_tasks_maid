@@ -43,4 +43,23 @@ function isFull(values, id) {
   return (values[id] || 0) >= defOf(id).max;
 }
 
-module.exports = { RESOURCE_DEFS, DEFAULT_VALUES, clampValue, applyRecovery, adjustValue, isFull };
+// 上限超えの見通し（表示用）：次回回復（1日分）を足した時に溢れる量を返す。
+// show = 満タン、または次回回復で溢れる場合に警告表示を出す条件。
+function overflowInfo(values, id) {
+  const def = defOf(id);
+  const value = values[id] || 0;
+  const room = Math.max(0, def.max - value);
+  const overflowNext = Math.max(0, value + def.perDay - def.max);
+  const full = value >= def.max;
+  return {
+    value,
+    max: def.max,
+    perDay: def.perDay,
+    room,
+    full,
+    overflowNext,
+    show: full || overflowNext > 0,
+  };
+}
+
+module.exports = { RESOURCE_DEFS, DEFAULT_VALUES, clampValue, applyRecovery, adjustValue, isFull, overflowInfo };

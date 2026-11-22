@@ -123,7 +123,7 @@ function createMainWindow() {
 // ---- 状態管理（正本は src/ の純粋モジュール＋ローカルJSON） ----
 const { PRESETS } = require('./src/presets');
 const { PERIOD_LABELS } = require('./src/cycles');
-const { RESOURCE_DEFS } = require('./src/resources');
+const { RESOURCE_DEFS, overflowInfo } = require('./src/resources');
 const lines = require('./src/lines');
 const lifecycle = require('./src/lifecycle');
 const store = require('./src/store');
@@ -158,7 +158,13 @@ function snapshot() {
     checks: appState.checks,
     presets: PRESETS,
     periodLabels: PERIOD_LABELS,
-    resources: { defs: RESOURCE_DEFS, values: appState.resources.values },
+    resources: {
+      defs: RESOURCE_DEFS,
+      values: appState.resources.values,
+      overflow: Object.fromEntries(
+        Object.keys(RESOURCE_DEFS).map((id) => [id, overflowInfo(appState.resources.values, id)]),
+      ),
+    },
     lines: lines.forCharacter(appState.settings.character),
   };
 }
@@ -212,6 +218,22 @@ ipcMain.handle('set-address', (_e, value) => {
 ipcMain.handle('set-show-agent', (_e, value) => {
   appState = structuredClone(appState);
   appState.settings.showAgent = !!value;
+  save();
+  broadcast();
+  return snapshot();
+});
+
+ipcMain.handle('set-voice-enabled', (_e, value) => {
+  appState = structuredClone(appState);
+  appState.settings.voiceEnabled = !!value;
+  save();
+  broadcast();
+  return snapshot();
+});
+
+ipcMain.handle('set-show-bubble', (_e, value) => {
+  appState = structuredClone(appState);
+  appState.settings.showBubble = !!value;
   save();
   broadcast();
   return snapshot();

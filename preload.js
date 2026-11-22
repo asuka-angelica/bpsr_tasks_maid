@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld('maid', {
   adjustResource: (id, delta) => ipcRenderer.invoke('adjust-resource', { id, delta }),
   setAddress: (value) => ipcRenderer.invoke('set-address', value),
   setShowAgent: (value) => ipcRenderer.invoke('set-show-agent', value),
+  setVoiceEnabled: (value) => ipcRenderer.invoke('set-voice-enabled', value),
+  setShowBubble: (value) => ipcRenderer.invoke('set-show-bubble', value),
   setCharacter: (value) => ipcRenderer.invoke('set-character', value),
   setNotify: (itemId, value) => ipcRenderer.invoke('set-notify', { itemId, value }),
   setAnchor: (value) => ipcRenderer.invoke('set-anchor', value),
