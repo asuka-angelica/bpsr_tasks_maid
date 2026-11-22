@@ -123,7 +123,7 @@ function createMainWindow() {
 // ---- 状態管理（正本は src/ の純粋モジュール＋ローカルJSON） ----
 const { PRESETS } = require('./src/presets');
 const { PERIOD_LABELS } = require('./src/cycles');
-const { RESOURCE_DEFS } = require('./src/resources');
+const { RESOURCE_DEFS, overflowInfo } = require('./src/resources');
 const lines = require('./src/lines');
 const lifecycle = require('./src/lifecycle');
 const store = require('./src/store');
@@ -158,7 +158,13 @@ function snapshot() {
     checks: appState.checks,
     presets: PRESETS,
     periodLabels: PERIOD_LABELS,
-    resources: { defs: RESOURCE_DEFS, values: appState.resources.values },
+    resources: {
+      defs: RESOURCE_DEFS,
+      values: appState.resources.values,
+      overflow: Object.fromEntries(
+        Object.keys(RESOURCE_DEFS).map((id) => [id, overflowInfo(appState.resources.values, id)]),
+      ),
+    },
     lines: lines.forCharacter(appState.settings.character),
   };
 }
@@ -217,6 +223,22 @@ ipcMain.handle('set-show-agent', (_e, value) => {
   return snapshot();
 });
 
+ipcMain.handle('set-voice-enabled', (_e, value) => {
+  appState = structuredClone(appState);
+  appState.settings.voiceEnabled = !!value;
+  save();
+  broadcast();
+  return snapshot();
+});
+
+ipcMain.handle('set-show-bubble', (_e, value) => {
+  appState = structuredClone(appState);
+  appState.settings.showBubble = !!value;
+  save();
+  broadcast();
+  return snapshot();
+});
+
 ipcMain.handle('set-character', (_e, value) => {
   if (value === 'momo' || value === 'suzuran' || value === 'mimoza') {
     appState = structuredClone(appState);
@@ -261,6 +283,12 @@ app.whenReady().then(() => {
     mainWindow.webContents.once('did-finish-load', () => {
       setTimeout(async () => {
         try {
+          if (process.env.MAID_SMOKE_SETTINGS === '1') {
+            await mainWindow.webContents.executeJavaScript(
+              "document.getElementById('settings-overlay').classList.remove('hidden')",
+            );
+            await new Promise((r) => setTimeout(r, 600));
+          }
           const img = await mainWindow.webContents.capturePage();
           fs.writeFileSync(out, img.toPNG());
           console.log('[smoke] captured:', out);

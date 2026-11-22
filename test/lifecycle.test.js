@@ -103,3 +103,21 @@ test('showAgent: 既定はオン、保存済みのオフは保持され、欠け
   const missing = normalizeState({ settings: {} }, D(2026, 11, 21, 10));
   assert.equal(missing.settings.showAgent, true);
 });
+
+test('defaultState: ボイスと吹き出しは既定オン、normalizeState で欠損を補う', () => {
+  const s = defaultState(D(2026, 11, 21, 10));
+  assert.equal(s.settings.voiceEnabled, true);
+  assert.equal(s.settings.showBubble, true);
+  const legacy = defaultState(D(2026, 11, 21, 10));
+  delete legacy.settings.voiceEnabled;
+  delete legacy.settings.showBubble;
+  const n = normalizeState(legacy, D(2026, 11, 21, 10));
+  assert.equal(n.settings.voiceEnabled, true);
+  assert.equal(n.settings.showBubble, true);
+  const off = defaultState(D(2026, 11, 21, 10));
+  off.settings.voiceEnabled = false;
+  off.settings.showBubble = false;
+  const kept = normalizeState(off, D(2026, 11, 21, 10));
+  assert.equal(kept.settings.voiceEnabled, false);
+  assert.equal(kept.settings.showBubble, false);
+});

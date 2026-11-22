@@ -2,7 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  RESOURCE_DEFS, applyRecovery, adjustValue, isFull, clampValue,
+  RESOURCE_DEFS, applyRecovery, adjustValue, isFull, clampValue, overflowInfo,
 } = require('../src/resources');
 
 test('applyRecovery: 鍵は1日+2、フォーカスは1日+400', () => {
@@ -41,4 +41,34 @@ test('clampValue / isFull / 定義の整合', () => {
   for (const [id, def] of Object.entries(RESOURCE_DEFS)) {
     assert.ok(def.max > 0 && def.perDay > 0, id);
   }
+});
+
+test('overflowInfo: 満タンは次回回復が全て溢れる', () => {
+  const ov = overflowInfo({ focus: 2000 }, 'focus');
+  assert.equal(ov.full, true);
+  assert.equal(ov.show, true);
+  assert.equal(ov.room, 0);
+  assert.equal(ov.overflowNext, 400);
+});
+
+test('overflowInfo: 上限に近いと溢れる分だけ警告する', () => {
+  const ov = overflowInfo({ focus: 1800 }, 'focus');
+  assert.equal(ov.full, false);
+  assert.equal(ov.show, true);
+  assert.equal(ov.room, 200);
+  assert.equal(ov.overflowNext, 200);
+  const key = overflowInfo({ bossKey: 5 }, 'bossKey');
+  assert.equal(key.show, true);
+  assert.equal(key.room, 1);
+  assert.equal(key.overflowNext, 1);
+});
+
+test('overflowInfo: 次回回復で上限に届かなければ警告しない', () => {
+  const ov = overflowInfo({ focus: 1500 }, 'focus');
+  assert.equal(ov.show, false);
+  assert.equal(ov.overflowNext, 0);
+  // ちょうど上限に届く場合は溢れないので警告しない
+  const just = overflowInfo({ focus: 1600 }, 'focus');
+  assert.equal(just.show, false);
+  assert.equal(just.overflowNext, 0);
 });

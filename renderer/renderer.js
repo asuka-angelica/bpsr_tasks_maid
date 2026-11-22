@@ -21,6 +21,8 @@ function render() {
   renderResources();
   layoutForAgent();
   renderCharacter();
+  const bubble = document.getElementById('bubble');
+  if (bubble) bubble.style.display = bubbleEnabled() ? '' : 'none';
   renderMini();
   renderSettings();
   renderFirstRun();
@@ -205,20 +207,24 @@ function onItemChecked(period, item, checked, complete) {
   lastPraiseAt = Date.now();
   if (complete) {
     say('complete');
+    playVoice('complete');
     playClip('praise');
   } else {
     say('praise');
+    playVoice('praise');
     playClip('praise');
   }
 }
 
 /* ---- 数値管理（feat/resources-ui） ----
  * 回復はメイン側が境界で自動加算する。ここは表示と手動の増減だけ。
- * 上限到達は「満タン」表示で知らせる（通知の発火はフェーズ1）。 */
+ * 上限到達は「満タン」表示で知らせる（通知の発火はフェーズ1）。
+ * 満タン、または次回回復で溢れる場合は、溢れる量を警告色で併記する。 */
 function renderResources() {
   const wrap = document.getElementById('resources');
   if (!wrap || !state || !state.resources) return;
   const { defs, values } = state.resources;
+  const overflow = state.resources.overflow || {};
   wrap.innerHTML = '';
   for (const id of Object.keys(defs)) {
     const def = defs[id];
@@ -249,6 +255,15 @@ function renderResources() {
       });
       row.appendChild(btn);
     }
+    const ov = overflow[id];
+    if (ov && ov.show) {
+      const warn = document.createElement('div');
+      warn.className = 'r-warn';
+      warn.textContent = ov.full
+        ? `⚠ 満タンです。次回回復 +${ov.perDay} は全て溢れます`
+        : `⚠ あと ${ov.room} で上限。次回回復 +${ov.perDay} のうち ${ov.overflowNext} が溢れます`;
+      row.appendChild(warn);
+    }
     wrap.appendChild(row);
   }
 }
@@ -263,40 +278,40 @@ function renderResources() {
  * 数値管理はリスト側へ移して管理機能だけが残る。 */
 const CHARACTER_LABELS = { momo: 'モモ', suzuran: 'スズラン', mimoza: 'ミモザ' };
 const CLIPS = {
+  // クリップは 2026-11-22 に新原画（シート→Codex の透過静止画）から作り直した版。
+  // 待機はクリーン区間の往復再生化、挨拶は動作が収まる範囲へトリミング済み。
   momo: {
     full: {
-      idle: 'assets/momo-idle.mp4', // 0〜4.0s にトリミング済み（煙の崩れ区間を回避）
-      greeting: 'assets/momo-greeting.mp4',
+      idle: 'assets/momo-idle.mp4', // クリーン区間 0〜5s を往復再生化
+      greeting: 'assets/momo-greeting.mp4', // 0〜8.5s（お辞儀→復帰まで）
       praise: 'assets/momo-praise.mp4',
     },
     sd: {
-      idle: 'assets/momo-sd-idle.mp4',
+      idle: 'assets/momo-sd-idle.mp4', // クリーン区間 0〜4s を往復再生化（後半はカメラの寄り）
       greeting: null, // SD の挨拶クリップは無いので待機で代用する
       praise: 'assets/momo-sd-jump.mp4',
     },
   },
   suzuran: {
     full: {
-      // 待機は原画クリップ 0〜2.0s のクリーン区間（背景変形・カメラ寄りの前）を往復再生化
-      idle: 'assets/suzuran-idle.mp4',
-      greeting: 'assets/suzuran-greeting.mp4', // 0〜7s（お辞儀→復帰まで）
+      idle: 'assets/suzuran-idle.mp4', // クリーン区間 6.0〜9.95s を往復再生化（冒頭は画角が落ち着くまで不安定）
+      greeting: 'assets/suzuran-greeting.mp4',
       praise: 'assets/suzuran-praise.mp4',
     },
     sd: {
-      idle: 'assets/suzuran-sd-idle.mp4', // 待機は 0〜2.0s のクリーン区間を往復再生化
+      idle: 'assets/suzuran-sd-idle.mp4', // 0.5〜5.5s を往復再生化
       greeting: null, // SD の挨拶クリップは無いので待機で代用する
-      praise: 'assets/suzuran-sd-jump.mp4',
+      praise: 'assets/suzuran-sd-jump.mp4', // 冒頭の寄りを避けて 1〜10s
     },
   },
   mimoza: {
     full: {
-      // 待機は原画クリップ 0〜3.0s の区間を往復再生化（全区間クリーンだったがループ用に抜粋）
-      idle: 'assets/mimosa-idle.mp4',
-      greeting: 'assets/mimosa-greeting.mp4', // 0〜8s（お辞儀→復帰まで）
+      idle: 'assets/mimosa-idle.mp4', // クリーン区間 5.0〜9.5s を往復再生化
+      greeting: 'assets/mimosa-greeting.mp4', // 0〜9.8s（お辞儀→復帰まで）
       praise: 'assets/mimosa-praise.mp4',
     },
     sd: {
-      idle: 'assets/mimosa-sd-idle.mp4', // 待機は 0〜3.0s のクリーン区間を往復再生化
+      idle: 'assets/mimosa-sd-idle.mp4', // クリーン区間 2.0〜7.0s を往復再生化
       greeting: null, // SD の挨拶クリップは無いので待機で代用する
       praise: 'assets/mimosa-sd-jump.mp4',
     },
@@ -325,6 +340,14 @@ let lastPraiseAt = 0; // 直近の褒めイベント（ミニへ戻った直後�
 
 function agentEnabled() {
   return !state || !state.settings || state.settings.showAgent !== false;
+}
+
+function voiceEnabled() {
+  return !state || !state.settings || state.settings.voiceEnabled !== false;
+}
+
+function bubbleEnabled() {
+  return !state || !state.settings || state.settings.showBubble !== false;
 }
 
 // エージェント表示オフ：キャラ列を畳み、数値管理はリスト列へ移す（管理機能は残す）
@@ -416,13 +439,36 @@ function renderCharacter() {
     greeted = true;
     playClip('greeting');
     say('greeting');
+    playVoice('greeting');
   }
+}
+
+/* ---- ボイス再生（設定ゲート） ----
+ * ボイスの事前合成ファイル同梱はフェーズ1。現時点では VOICE_FILES は
+ * 全キャラ空で、playVoice は設定（voiceEnabled）を確認するだけの
+ * ゲートとして先行実装してある。ファイルが同梱されたら、ここへ
+ * { greeting, praise, complete } のパスを登録するだけで再生が有効になる。 */
+const VOICE_FILES = { momo: {}, suzuran: {}, mimoza: {} };
+let voiceAudio = null;
+
+function playVoice(kind) {
+  if (!agentEnabled() || !voiceEnabled()) return;
+  const files = VOICE_FILES[currentCharacterId()] || {};
+  const src = files[kind];
+  if (!src) return; // ボイス未同梱（フェーズ1で追加）
+  if (!voiceAudio) voiceAudio = new Audio();
+  if (voiceAudio.getAttribute('src') !== src) voiceAudio.setAttribute('src', src);
+  try { voiceAudio.currentTime = 0; } catch { /* 無視 */ }
+  const p = voiceAudio.play();
+  if (p && typeof p.catch === 'function') p.catch(() => { /* 再生不可の環境では無音のまま */ });
 }
 
 // 台詞の種別（greeting/praise/complete）から選んで吹き出しに出す。
 // 直前と同じ文は避ける（カーナビ式のバリエーションを活かす）。
+// 吹き出しオフ（showBubble）の時は台詞表示自体を出さない（キャラ表示は残る）。
 function say(kind) {
   if (!agentEnabled()) return;
+  if (!bubbleEnabled()) return;
   if (!state || !state.lines) return;
   const address = state.settings.address || 'ご主人様';
   const arr = state.lines[kind] || [];
@@ -476,6 +522,41 @@ function renderSettings() {
   agentSw.appendChild(agentTrack);
   agentRow.appendChild(agentSw);
   body.appendChild(agentRow);
+
+  // ボイス／吹き出しのオン・オフ（エージェント表示とは独立に切り替える）
+  const toggleRow = (labelText, checked, onChange) => {
+    const row = document.createElement('div');
+    row.className = 'setting-row';
+    const label = document.createElement('span');
+    label.className = 's-label';
+    label.textContent = labelText;
+    row.appendChild(label);
+    const sw = document.createElement('label');
+    sw.className = 'switch';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = checked;
+    input.addEventListener('change', async () => {
+      state = await onChange(input.checked);
+      render();
+    });
+    const track = document.createElement('span');
+    track.className = 'track';
+    sw.appendChild(input);
+    sw.appendChild(track);
+    row.appendChild(sw);
+    return row;
+  };
+  body.appendChild(toggleRow(
+    'ボイス（挨拶・褒め・全完了の声）',
+    voiceEnabled(),
+    (v) => window.maid.setVoiceEnabled(v),
+  ));
+  body.appendChild(toggleRow(
+    '吹き出し（台詞の表示。オフでもキャラは表示されます）',
+    bubbleEnabled(),
+    (v) => window.maid.setShowBubble(v),
+  ));
 
   const hAddr = document.createElement('h3');
   hAddr.textContent = '呼び方';
