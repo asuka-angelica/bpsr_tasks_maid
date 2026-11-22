@@ -87,12 +87,23 @@ function resolveMediaSrc(path) {
   return mediaCache.resolve(path, protectedMediaPaths());
 }
 
-// 論理パスから持ち主のキャラ ID を推定する（キャッシュの失効判定用）
+// 論理パスから持ち主のキャラ ID を推定する（キャッシュの失効判定用）。
+// ファイル名の接頭辞とキャラ ID は一致するとは限らない（例：ミモザのキャラ ID は
+// 'mimoza' だがクリップのファイル名は 'mimosa-*.mp4'）。接頭辞で推定すると
+// 実在しないキャラの所有と誤判定して、再生中のキャラの取得まで破棄してしまう
+// （v0.7.2 実機：ミモザ選択時に挨拶クリップが一切表示されなかった原因）。
+// そのため、キャラ定義が実際に参照しているクリップパスと突き合わせて判定し、
+// どの定義にも属さないパスは「持ち主不明」として破棄対象から外す。
 function mediaPathOwner(p) {
   const m = /characters\/([a-z0-9-]+)\//.exec(p);
   if (m) return m[1];
-  const b = /^assets\/(momo|suzuran|mimosa)-/.exec(p);
-  if (b) return b[1];
+  const list = (state && state.characters) || [];
+  for (const c of list) {
+    const sets = c.clips || {};
+    for (const form of Object.values(sets)) {
+      if (form && Object.values(form).includes(p)) return c.id;
+    }
+  }
   return null;
 }
 
@@ -118,6 +129,14 @@ function miniClipActive() {
   return agentEnabled() && dockMode() === 'mini';
 }
 
+/* クリップの先頭フレームには生成時の白背景フレームが1枚だけ混ざっている
+ * ことがある（v0.7.2 の褒め・挨拶・SDジャンプで実測）。そのまま 0 秒から
+ * 再生すると、チェックや切替の瞬間に白がちらつく。再生開始位置を
+ * 1フレーム分（24fps で約0.042秒）より先に置き、そのフレームを表示しない。
+ * あわせて、切替の合間に要素が無地になる瞬間は styles.css 側でステージと
+ * 同じ濃い紫（--panel-solid）を敷き、白い無地が挟まらないようにする。 */
+const CLIP_START_SKIP_SEC = 0.06;
+
 function applyMiniClip(kind, { force = false } = {}) {
   if (!miniVideo || !miniClipActive()) return;
   const sd = miniClips();
@@ -139,7 +158,7 @@ function applyMiniClip(kind, { force = false } = {}) {
     miniCurrentClipPath = path;
     miniInFlight = true;
   }
-  try { miniVideo.currentTime = 0; } catch { /* メタデータ未読込時は無視 */ }
+  try { miniVideo.currentTime = CLIP_START_SKIP_SEC; } catch { /* メタデータ未読込時は無視 */ }
   const p = miniVideo.play();
   if (p && typeof p.catch === 'function') p.catch(() => { /* 自動再生不可の環境では静止画のまま */ });
 }
@@ -626,7 +645,7 @@ function applyClip(kind, { force = false } = {}) {
     currentClipPath = path;
     clipInFlight = true;
   }
-  try { videoEl.currentTime = 0; } catch { /* メタデータ未読込時は無視 */ }
+  try { videoEl.currentTime = CLIP_START_SKIP_SEC; } catch { /* メタデータ未読込時は無視 */ }
   const p = videoEl.play();
   if (p && typeof p.catch === 'function') p.catch(() => { /* 自動再生不可の環境では静止画のまま */ });
 }
@@ -984,7 +1003,7 @@ function renderRegistrationForm(body) {
   const h = regEl('h3', null, 'キャラクター追加');
   body.appendChild(h);
   const intro = regEl('p', 'setting-note',
-    '表示形式を選んで、名前・台詞・素材を登録します。登録したキャラは上のキャラ選択に現れます。');
+    'ここは通常の設定ではなく、新しいキャラクターをアプリに追加するための場所です。表示形式を選んで、名前・台詞・素材を登録します。登録したキャラは上のキャラ選択に現れます。');
   body.appendChild(intro);
 
   const nameRow = regEl('div', 'setting-row');
@@ -1345,7 +1364,13 @@ function renderSettings() {
   }
   body.appendChild(pkgRow);
 
-  renderRegistrationForm(body);
+  // キャラクター追加は通常の設定項目とは別機能なので、枠付きの独立
+  // セクションとして描く（実機報告：設定にそのまま付いていて分かりにくい）。
+  const regSection = document.createElement('section');
+  regSection.className = 'settings-subsection';
+  regSection.setAttribute('aria-label', 'キャラクター追加');
+  body.appendChild(regSection);
+  renderRegistrationForm(regSection);
 
   const hAnchor = document.createElement('h3');
   hAnchor.textContent = '2週間周期';
@@ -1422,11 +1447,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
 window.addEventListener('DOMContentLoaded', () => {
   window.maid.onState((s) => { state = s; render(); });
+  // 設定の開閉：閉じるボタンだけでなく、設定ボタンの再押し（トグル）と
+  // Esc キーでも閉じられるようにする（実機報告：閉じるためだけに毎回
+  // パネル上部のボタンまで行く必要があった）。
+  const settingsOverlay = document.getElementById('settings-overlay');
+  const setSettingsOpen = (open) => settingsOverlay.classList.toggle('hidden', !open);
   document.getElementById('btn-settings').addEventListener('click', () => {
-    document.getElementById('settings-overlay').classList.remove('hidden');
+    setSettingsOpen(settingsOverlay.classList.contains('hidden'));
   });
   document.getElementById('btn-settings-close').addEventListener('click', () => {
-    document.getElementById('settings-overlay').classList.add('hidden');
+    setSettingsOpen(false);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !settingsOverlay.classList.contains('hidden')) {
+      setSettingsOpen(false);
+    }
   });
 
   /* ドックの状態遷移（feat/dock-states）

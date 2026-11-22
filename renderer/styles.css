@@ -87,15 +87,18 @@ body[data-dock="minimized"] #view-minimized { display: flex; }
   margin: auto;
   border: 1px solid var(--line);
   border-radius: 16px;
-  background: var(--panel);
+  /* 切替の合間に要素が無地になる瞬間も、クリップの背景と同じ濃い紫を敷く
+   * （半透明の --panel だと背面のグラデーションが透けて見え、白っぽい
+   * ちらつきに見えることがあるため、単色の --panel-solid にする） */
+  background: var(--panel-solid);
   display: flex; align-items: center; justify-content: center;
   overflow: hidden;
   position: relative;
 }
 /* v0.6.1 でクリップ側を 2:3 キャンバス＋固定背景＋収まり正規化したため、
  * 枠（2:3）とはそのまま一致する。上寄せ等の誤魔化しは不要 */
-.avatar-frame video { display: block; width: 100%; height: 100%; object-fit: cover; object-position: 50% 50%; }
-.avatar-frame img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: 50% 50%; }
+.avatar-frame video { display: block; width: 100%; height: 100%; object-fit: cover; object-position: 50% 50%; background: var(--panel-solid); }
+.avatar-frame img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: 50% 50%; background: var(--panel-solid); }
 .avatar-placeholder { color: var(--ink-soft); font-size: 14px; }
 /* エージェント表示オフ：キャラ列を完全に消し、リスト側が幅を使う。
  * 数値管理は JS がリスト列へ移すので、管理機能はそのまま残る。 */
@@ -201,14 +204,14 @@ body.agent-off .char-column { display: none; }
   width: 100px; height: 100px;
   border: 1px solid var(--line);
   border-radius: 14px;
-  background: var(--panel);
+  background: var(--panel-solid);
   overflow: hidden;
   display: flex; align-items: center; justify-content: center;
   cursor: pointer;
   -webkit-app-region: no-drag;
 }
-.mini-char video { display: block; width: 100%; height: 100%; object-fit: cover; }
-.mini-char img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.mini-char video { display: block; width: 100%; height: 100%; object-fit: cover; background: var(--panel-solid); }
+.mini-char img { display: block; width: 100%; height: 100%; object-fit: cover; background: var(--panel-solid); }
 .mini-buttons { display: flex; flex-direction: column; gap: 10px; align-items: center; -webkit-app-region: no-drag; }
 .mini-btn {
   width: 46px; height: 46px;
@@ -279,6 +282,15 @@ body.agent-off .char-column { display: none; }
 .choice-btn:hover { background: var(--accent); color: var(--accent-ink); font-weight: 700; }
 .note { font-size: 12px; color: var(--ink-soft); }
 .setting-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: 14px; }
+/* キャラクター追加の独立セクション：枠と背景で通常の設定項目と区別する */
+.settings-subsection {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 2px 14px 12px;
+  margin: 20px 0 6px;
+}
+.settings-subsection h3 { color: var(--accent); margin-top: 12px; }
 .setting-row .s-label { flex: 1 1 auto; }
 .setting-note { font-size: 12px; color: var(--muted); margin: 6px 2px; line-height: 1.5; }
 .setting-row input[type="text"] { flex: 1 1 auto; min-width: 0; }
