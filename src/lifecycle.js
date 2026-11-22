@@ -19,6 +19,7 @@ function defaultState(now, anchor = DEFAULT_ANCHOR) {
     version: 1,
     settings: {
       address: null, // 'ご主人様' | 'お嬢様'（初回選択までは null）
+      characterAddress: {}, // キャラID -> そのキャラ専用の呼び方（未設定は全体設定に従う）
       character: 'momo',
       showAgent: true, // エージェント（キャラ表示）のオン/オフ。管理専用ではオフにできる
       voiceEnabled: true, // ボイス再生のオン/オフ（挨拶・褒め・全完了。再生自体はフェーズ1）

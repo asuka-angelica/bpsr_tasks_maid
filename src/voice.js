@@ -17,10 +17,12 @@ function voiceDir(userDataDir) {
   return path.join(userDataDir, 'voice');
 }
 
-// ボイスパックを走査する。戻り値:
+// ボイスパックを走査する。charIds は対象キャラ（未指定なら組み込み3人。
+// ユーザー追加キャラのボイスも同じ規約で置けるよう、呼び出し側が渡す）。
+// 戻り値:
 //   { available: フォルダが存在するか,
 //     files: { <キャラID>: { <場面>: 'maid://app/voice/...' } } }
-function scanVoicePack(dir) {
+function scanVoicePack(dir, charIds = VOICE_CHARACTERS) {
   let available = false;
   try {
     available = fs.statSync(dir).isDirectory();
@@ -29,7 +31,7 @@ function scanVoicePack(dir) {
   }
   const files = {};
   if (!available) return { available, files };
-  for (const ch of VOICE_CHARACTERS) {
+  for (const ch of charIds) {
     for (const kind of VOICE_KINDS) {
       for (const ext of VOICE_EXTS) {
         const p = path.join(dir, ch, `${kind}${ext}`);
