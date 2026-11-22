@@ -6,7 +6,7 @@ const os = require('os');
 const path = require('path');
 const {
   validateCharacterDef, scanUserCharacters, resolveAddress,
-  addressCandidatesOf, builtinCharacters,
+  addressCandidatesOf, builtinCharacters, effectiveDisplayType,
 } = require('../src/characters');
 
 function lines() {
@@ -104,6 +104,35 @@ test('characters: 呼び方の解決順位（キャラ設定 > 定義の既定 >
   assert.equal(resolveAddress(def, settings), 'ご主人様');
   assert.equal(resolveAddress({ id: 'momo', addressDefault: null }, settings), 'お嬢様');
   assert.equal(resolveAddress({ id: 'momo' }, {}), 'ご主人様');
+});
+
+test('characters: 組み込み3人は動画と立ち絵の両形式を持ち、立ち絵は全場面が揃う', () => {
+  for (const c of builtinCharacters()) {
+    assert.ok(c.clips && c.clips.full.idle, `${c.id} の clips`);
+    const im = c.images && c.images.full;
+    assert.ok(im, `${c.id} の images`);
+    for (const kind of ['idle', 'greeting', 'praise', 'complete']) {
+      assert.match(im[kind], /\.png$/, `${c.id} の images.full.${kind}`);
+    }
+    assert.match(c.images.sd.idle, /sd-idle\.png$/, `${c.id} の images.sd.idle`);
+    assert.match(c.images.sd.jump, /sd-jump\.png$/, `${c.id} の images.sd.jump`);
+  }
+});
+
+test('characters: 実効表示形式は両形式キャラだけ設定に従い、既定は立ち絵', () => {
+  const dual = builtinCharacters()[0];
+  assert.equal(effectiveDisplayType(dual, {}), 'image');
+  assert.equal(effectiveDisplayType(dual, null), 'image');
+  assert.equal(effectiveDisplayType(dual, { displayFormat: 'image' }), 'image');
+  assert.equal(effectiveDisplayType(dual, { displayFormat: 'video' }), 'video');
+  // 片形式しか持たないキャラは設定の影響を受けない
+  const videoOnly = { id: 'v', type: 'video', clips: { full: { idle: 'i.mp4' } } };
+  assert.equal(effectiveDisplayType(videoOnly, { displayFormat: 'image' }), 'video');
+  const imageOnly = { id: 'i', type: 'image', images: { full: { idle: 'i.png' } } };
+  assert.equal(effectiveDisplayType(imageOnly, { displayFormat: 'video' }), 'image');
+  const l2d = { id: 'l', type: 'live2d', live2d: { modelUrl: 'm.model3.json' } };
+  assert.equal(effectiveDisplayType(l2d, { displayFormat: 'video' }), 'live2d');
+  assert.equal(effectiveDisplayType(null, {}), 'video');
 });
 
 test('characters: 候補は定義優先、無ければ既定の2つ', () => {

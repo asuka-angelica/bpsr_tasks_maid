@@ -96,6 +96,18 @@ test('dockMode: 既定は expanded、保存済みの状態は保持され、想�
   assert.equal(missing.settings.dockMode, 'expanded');
 });
 
+test('displayFormat: 既定は image（立ち絵）、保存済みの video は保持され、想定外の値は image に戻る', () => {
+  assert.equal(defaultState(D(2026, 11, 21, 10)).settings.displayFormat, 'image');
+  const saved = normalizeState({ settings: { displayFormat: 'video' } }, D(2026, 11, 21, 10));
+  assert.equal(saved.settings.displayFormat, 'video');
+  const savedImg = normalizeState({ settings: { displayFormat: 'image' } }, D(2026, 11, 21, 10));
+  assert.equal(savedImg.settings.displayFormat, 'image');
+  const broken = normalizeState({ settings: { displayFormat: 'hologram' } }, D(2026, 11, 21, 10));
+  assert.equal(broken.settings.displayFormat, 'image');
+  const missing = normalizeState({ settings: {} }, D(2026, 11, 21, 10));
+  assert.equal(missing.settings.displayFormat, 'image');
+});
+
 test('showAgent: 既定はオン、保存済みのオフは保持され、欠けていればオンで埋まる', () => {
   assert.equal(defaultState(D(2026, 11, 21, 10)).settings.showAgent, true);
   const off = normalizeState({ settings: { showAgent: false } }, D(2026, 11, 21, 10));

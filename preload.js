@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('maid', {
   setVoiceEnabled: (value) => ipcRenderer.invoke('set-voice-enabled', value),
   setShowBubble: (value) => ipcRenderer.invoke('set-show-bubble', value),
   setCharacter: (value) => ipcRenderer.invoke('set-character', value),
+  setDisplayFormat: (value) => ipcRenderer.invoke('set-display-format', value),
   setCharacterAddress: (charId, value) => ipcRenderer.invoke('set-character-address', { charId, value }),
   pickFile: (kind) => ipcRenderer.invoke('pick-file', kind),
   registerCharacter: (payload) => ipcRenderer.invoke('register-character', payload),

@@ -26,6 +26,15 @@ const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.webp'];
 const LINE_KINDS = ['greeting', 'praise', 'complete'];
 const DEFAULT_ADDRESS_CANDIDATES = ['ご主人様', 'お嬢様'];
 
+// 表示形式の設定（settings.displayFormat）で選べる値と既定。
+// 両形式の素材を持つキャラ（組み込み3人）にだけ効き、既定は立ち絵。
+// 片形式しか持たないキャラ（ユーザー追加など）は定義の type のまま。
+const DISPLAY_FORMATS = ['image', 'video'];
+const DEFAULT_DISPLAY_FORMAT = 'image';
+
+// 組み込み3人は動画（clips）と立ち絵（images）の両形式を持つ。
+// 立ち絵のファイル名は動画と同じ接頭辞＋場面キーで、拡張子だけ .png。
+// （ミモザはキャラ ID が mimoza でもファイル名は mimosa-* で統一されている）
 const BUILTIN_CHARACTERS = [
   {
     id: 'momo', name: 'モモ', type: 'video', builtin: true,
@@ -33,6 +42,13 @@ const BUILTIN_CHARACTERS = [
       full: { idle: 'assets/momo-idle.mp4', greeting: 'assets/momo-greeting.mp4', praise: 'assets/momo-praise.mp4' },
       sd: { idle: 'assets/momo-sd-idle.mp4', greeting: null, praise: 'assets/momo-sd-jump.mp4' },
       sdSmall: { idle: 'assets/momo-sd-idle-mini.mp4', praise: 'assets/momo-sd-jump-mini.mp4' },
+    },
+    images: {
+      full: {
+        idle: 'assets/momo-idle.png', greeting: 'assets/momo-greeting.png',
+        praise: 'assets/momo-praise.png', complete: 'assets/momo-complete.png',
+      },
+      sd: { idle: 'assets/momo-sd-idle.png', jump: 'assets/momo-sd-jump.png' },
     },
   },
   {
@@ -42,6 +58,13 @@ const BUILTIN_CHARACTERS = [
       sd: { idle: 'assets/suzuran-sd-idle.mp4', greeting: null, praise: 'assets/suzuran-sd-jump.mp4' },
       sdSmall: { idle: 'assets/suzuran-sd-idle-mini.mp4', praise: 'assets/suzuran-sd-jump-mini.mp4' },
     },
+    images: {
+      full: {
+        idle: 'assets/suzuran-idle.png', greeting: 'assets/suzuran-greeting.png',
+        praise: 'assets/suzuran-praise.png', complete: 'assets/suzuran-complete.png',
+      },
+      sd: { idle: 'assets/suzuran-sd-idle.png', jump: 'assets/suzuran-sd-jump.png' },
+    },
   },
   {
     id: 'mimoza', name: 'ミモザ', type: 'video', builtin: true,
@@ -50,8 +73,32 @@ const BUILTIN_CHARACTERS = [
       sd: { idle: 'assets/mimosa-sd-idle.mp4', greeting: null, praise: 'assets/mimosa-sd-jump.mp4' },
       sdSmall: { idle: 'assets/mimosa-sd-idle-mini.mp4', praise: 'assets/mimosa-sd-jump-mini.mp4' },
     },
+    images: {
+      full: {
+        idle: 'assets/mimosa-idle.png', greeting: 'assets/mimosa-greeting.png',
+        praise: 'assets/mimosa-praise.png', complete: 'assets/mimosa-complete.png',
+      },
+      sd: { idle: 'assets/mimosa-sd-idle.png', jump: 'assets/mimosa-sd-jump.png' },
+    },
   },
 ];
+
+// キャラが両形式の素材を持つか（表示形式の設定が効くキャラか）
+function hasBothFormats(def) {
+  return !!(def && def.clips && def.clips.full && def.clips.full.idle &&
+    def.images && def.images.full && def.images.full.idle);
+}
+
+// 実際に表示する形式。両形式を持つキャラは設定（settings.displayFormat、
+// 既定は立ち絵）に従い、それ以外は定義の type のまま。
+function effectiveDisplayType(def, settings) {
+  if (!def) return 'video';
+  if (hasBothFormats(def)) {
+    const pref = settings && settings.displayFormat;
+    return pref === 'video' ? 'video' : DEFAULT_DISPLAY_FORMAT;
+  }
+  return def.type || 'video';
+}
 
 function isSafeFileName(name) {
   return typeof name === 'string' && name.length > 0 &&
@@ -259,7 +306,9 @@ function addressCandidatesOf(charDef) {
 module.exports = {
   CHARACTER_TYPES, VIDEO_EXTS, IMAGE_EXTS, LINE_KINDS,
   DEFAULT_ADDRESS_CANDIDATES, BUILTIN_CHARACTERS,
+  DISPLAY_FORMATS, DEFAULT_DISPLAY_FORMAT,
   isSafeFileName, isValidId, validateCharacterDef,
   resolveUserCharacter, referencedFiles, scanUserCharacters,
   builtinCharacters, allCharacters, resolveAddress, addressCandidatesOf,
+  hasBothFormats, effectiveDisplayType,
 };
