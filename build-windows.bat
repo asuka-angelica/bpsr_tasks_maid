@@ -1,5 +1,5 @@
 @echo off
-rem build-windows.bat — Windows 配布ビルド（ガーディアンと同じ型）
+rem build-windows.bat — Windows 配布ビルド
 rem 使い方: このフォルダで build-windows.bat を実行する
 setlocal
 cd /d %~dp0

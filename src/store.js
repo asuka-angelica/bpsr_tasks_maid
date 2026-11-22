@@ -6,10 +6,20 @@ const path = require('path');
 const { normalizeState } = require('./lifecycle');
 
 function loadState(filePath, now) {
+  let rawText;
   try {
-    const raw = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-    return normalizeState(raw, now);
+    rawText = fs.readFileSync(filePath, 'utf8');
   } catch {
+    return normalizeState(null, now); // ファイルが無い（初回起動）など
+  }
+  try {
+    return normalizeState(JSON.parse(rawText), now);
+  } catch {
+    // 読めない元データは退避してから初期状態で始める（レビュー中8：
+    // 黙って初期化して次の保存で上書きしてしまわないように）
+    try {
+      fs.renameSync(filePath, `${filePath}.corrupt-${Date.now()}`);
+    } catch { /* 退避できなくても起動は続ける */ }
     return normalizeState(null, now);
   }
 }
