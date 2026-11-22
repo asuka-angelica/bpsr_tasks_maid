@@ -32,6 +32,7 @@ const BUILTIN_CHARACTERS = [
     clips: {
       full: { idle: 'assets/momo-idle.mp4', greeting: 'assets/momo-greeting.mp4', praise: 'assets/momo-praise.mp4' },
       sd: { idle: 'assets/momo-sd-idle.mp4', greeting: null, praise: 'assets/momo-sd-jump.mp4' },
+      sdSmall: { idle: 'assets/momo-sd-idle-mini.mp4', praise: 'assets/momo-sd-jump-mini.mp4' },
     },
   },
   {
@@ -39,6 +40,7 @@ const BUILTIN_CHARACTERS = [
     clips: {
       full: { idle: 'assets/suzuran-idle.mp4', greeting: 'assets/suzuran-greeting.mp4', praise: 'assets/suzuran-praise.mp4' },
       sd: { idle: 'assets/suzuran-sd-idle.mp4', greeting: null, praise: 'assets/suzuran-sd-jump.mp4' },
+      sdSmall: { idle: 'assets/suzuran-sd-idle-mini.mp4', praise: 'assets/suzuran-sd-jump-mini.mp4' },
     },
   },
   {
@@ -46,6 +48,7 @@ const BUILTIN_CHARACTERS = [
     clips: {
       full: { idle: 'assets/mimosa-idle.mp4', greeting: 'assets/mimosa-greeting.mp4', praise: 'assets/mimosa-praise.mp4' },
       sd: { idle: 'assets/mimosa-sd-idle.mp4', greeting: null, praise: 'assets/mimosa-sd-jump.mp4' },
+      sdSmall: { idle: 'assets/mimosa-sd-idle-mini.mp4', praise: 'assets/mimosa-sd-jump-mini.mp4' },
     },
   },
 ];

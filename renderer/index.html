@@ -3,6 +3,9 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<!-- CSP（レビュー高3）：読み込み元を自アプリ（maid://）と Blob に絞る。
+     追加キャラの素材名などを描画に使うため、外部リソースの読み込みを断つ。 -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob:; media-src 'self' blob:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'" />
 <title>スタレゾ日課メイド（仮称）</title>
 <link rel="stylesheet" href="styles.css" />
 </head>
@@ -93,6 +96,7 @@
   </div>
 
   <script src="clipguard.js"></script>
+  <script src="mediacache.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>
