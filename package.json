@@ -12,5 +12,6 @@
     "start": "electron .",
     "test": "node --test"
   },
-  "version": "0.7.1"
+  "version": "0.7.1",
+  "license": "MIT"
 }
