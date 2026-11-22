@@ -33,6 +33,15 @@ function registerProtocol() {
     try {
       const url = new URL(request.url);
       const rel = decodeURIComponent(url.pathname).replace(/^\/+/, '');
+      // ボイスパックは userData/voice/ から配信する（アプリ本体には含めない）
+      if (rel.startsWith('voice/')) {
+        const base = voiceDirPath();
+        const filePath = path.join(base, rel.slice('voice/'.length));
+        if (!filePath.startsWith(base)) {
+          return new Response('forbidden', { status: 403 });
+        }
+        return net.fetch(pathToFileURL(filePath).toString());
+      }
       const filePath = path.join(RENDERER_DIR, rel || 'index.html');
       if (!filePath.startsWith(RENDERER_DIR)) {
         return new Response('forbidden', { status: 403 });
@@ -106,6 +115,7 @@ function createMainWindow() {
     ...bounds,
     frame: false,
     resizable: false,
+    icon: path.join(__dirname, 'assets', 'icon.png'),
     title: 'スタレゾ日課メイド（仮称）',
     autoHideMenuBar: true,
     webPreferences: {
@@ -127,6 +137,11 @@ const { RESOURCE_DEFS, overflowInfo } = require('./src/resources');
 const lines = require('./src/lines');
 const lifecycle = require('./src/lifecycle');
 const store = require('./src/store');
+const { voiceDir, scanVoicePack } = require('./src/voice');
+
+function voiceDirPath() {
+  return voiceDir(app.getPath('userData'));
+}
 
 let appState = null;
 let advanceTimer = null;
@@ -151,9 +166,13 @@ function advanceAndSave() {
 }
 
 function snapshot() {
+  // ボイスパックは毎回走査する（起動後にフォルダが追加されても検出できるように）
+  const voice = scanVoicePack(voiceDirPath());
   return {
     appVersion: APP_VERSION,
     dockMode,
+    voiceAvailable: voice.available,
+    voiceFiles: voice.files,
     settings: appState.settings,
     checks: appState.checks,
     presets: PRESETS,

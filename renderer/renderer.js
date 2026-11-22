@@ -53,17 +53,130 @@ async function setDock(mode) {
 let miniVideo = null;
 let miniClipKind = 'idle';
 let miniCharacter = null;
+// メイン表示と同じく、切替の直列化と段階復帰で割り込みエラーを防ぐ
+let miniInFlight = false;
+let pendingMiniKind = null;
+let miniRetryUsed = false;
+let miniCurrentClipPath = null; // 設定済み（または適用中）の論理パス
+
+/* クリップは一度 fetch して Blob URL 化してから再生する（不具合2の根本対策）。
+ * カスタムスキーム越しのストリーミング再生は、切替で読み込みが割り込まれると
+ * デマルチプレクサを開けず MEDIA_ERR_SRC_NOT_SUPPORTED になることがあるため、
+ * 割り込まれる読み込み自体を無くす。Blob はメモリ読みなので切替・シーク・
+ * ループが割り込みの影響を受けない。 */
+const mediaBlobUrls = new Map(); // 論理パス -> Blob URL（失敗時は論理パス自体）
+const mediaBlobPending = new Map(); // 論理パス -> Promise
+
+function resolveMediaSrc(path) {
+  if (mediaBlobUrls.has(path)) return mediaBlobUrls.get(path);
+  if (!mediaBlobPending.has(path)) {
+    const p = fetch(path)
+      .then((r) => { if (!r.ok) throw new Error('fetch failed'); return r.blob(); })
+      .then((b) => URL.createObjectURL(b))
+      .catch(() => path) // Blob 化に失敗したら通常パスで直接再生を試す
+      .then((url) => {
+        mediaBlobPending.delete(path);
+        mediaBlobUrls.set(path, url);
+        flushPendingClip(false);
+        flushPendingMiniClip(false);
+        return url;
+      });
+    mediaBlobPending.set(path, p);
+  }
+  return null; // 取得中
+}
+
+function applyMiniClip(kind, { force = false } = {}) {
+  if (!miniVideo) return;
+  const sd = clipsFor(currentCharacterId(), 'sd');
+  miniClipKind = sd[kind] ? kind : 'idle';
+  const path = sd[miniClipKind];
+  miniVideo.loop = miniClipKind === 'idle';
+  const url = resolveMediaSrc(path);
+  if (!url) {
+    pendingMiniKind = miniClipKind; // Blob が届いたら flush 側で適用する
+    return;
+  }
+  if (force) {
+    miniVideo.removeAttribute('src');
+    try { miniVideo.load(); } catch { /* 無視 */ }
+    miniCurrentClipPath = null;
+  }
+  if (miniCurrentClipPath !== path) {
+    miniVideo.setAttribute('src', url);
+    miniCurrentClipPath = path;
+    miniInFlight = true;
+  }
+  try { miniVideo.currentTime = 0; } catch { /* メタデータ未読込時は無視 */ }
+  const p = miniVideo.play();
+  if (p && typeof p.catch === 'function') p.catch(() => { /* 自動再生不可の環境では静止画のまま */ });
+}
 
 function playMiniClip(kind) {
   if (!miniVideo) return;
   const sd = clipsFor(currentCharacterId(), 'sd');
-  miniClipKind = sd[kind] ? kind : 'idle';
-  const src = sd[miniClipKind];
-  miniVideo.loop = miniClipKind === 'idle';
-  if (miniVideo.getAttribute('src') !== src) miniVideo.setAttribute('src', src);
-  try { miniVideo.currentTime = 0; } catch { /* メタデータ未読込時は無視 */ }
-  const p = miniVideo.play();
-  if (p && typeof p.catch === 'function') p.catch(() => { /* 自動再生不可の環境では静止画のまま */ });
+  const want = sd[kind] ? kind : 'idle';
+  const action = window.ClipGuard.nextAction({
+    currentSrc: miniCurrentClipPath,
+    requestedSrc: sd[want],
+    inFlight: miniInFlight,
+    readyState: miniVideo.readyState,
+  });
+  if (action === 'switch') {
+    pendingMiniKind = null;
+    applyMiniClip(want);
+  } else if (action === 'defer') {
+    pendingMiniKind = want;
+  } else if (action === 'restart') {
+    if (want !== 'idle') applyMiniClip(want);
+    else if (miniVideo.paused) { const p = miniVideo.play(); if (p && p.catch) p.catch(() => {}); }
+  } else if (miniVideo.paused && !miniInFlight) {
+    const p = miniVideo.play();
+    if (p && typeof p.catch === 'function') p.catch(() => { /* 同上 */ });
+  }
+}
+
+// settled=true は canplay（読み込みが落ち着いた）からの flush。
+// settled=false は Blob 取得完了からの flush で、別の読み込みが進行中なら
+// 保留を維持する（割り込みを作らない）。
+function flushPendingMiniClip(settled) {
+  if (!miniVideo || !pendingMiniKind) {
+    if (settled) miniInFlight = false;
+    return;
+  }
+  if (miniInFlight && !settled) return;
+  miniInFlight = false;
+  const kind = pendingMiniKind;
+  pendingMiniKind = null;
+  const sd = clipsFor(currentCharacterId(), 'sd');
+  if (miniCurrentClipPath !== (sd[kind] || sd.idle)) applyMiniClip(kind);
+}
+
+function onMiniVideoError(wrap) {
+  const action = window.ClipGuard.errorAction({
+    hasPending: !!pendingMiniKind,
+    retryUsed: miniRetryUsed,
+  });
+  if (action === 'apply-pending') {
+    miniInFlight = false;
+    const kind = pendingMiniKind;
+    pendingMiniKind = null;
+    applyMiniClip(kind, { force: true });
+    return;
+  }
+  if (action === 'retry') {
+    miniRetryUsed = true;
+    miniInFlight = false;
+    const kind = miniClipKind;
+    setTimeout(() => { if (miniVideo) applyMiniClip(kind, { force: true }); }, 350);
+    return;
+  }
+  wrap.innerHTML = `<div class="avatar-placeholder">${currentCharacterLabel()}</div>`;
+  miniVideo = null;
+  miniInFlight = false;
+  pendingMiniKind = null;
+  miniRetryUsed = false;
+  miniCurrentClipPath = null;
 }
 
 function renderMini() {
@@ -85,6 +198,10 @@ function renderMini() {
   // キャラが切り替わっていたら、SD クリップも新しいキャラのものへ作り替える
   if (miniVideo && miniCharacter !== currentCharacterId()) {
     miniVideo = null;
+    miniInFlight = false;
+    pendingMiniKind = null;
+    miniRetryUsed = false;
+    miniCurrentClipPath = null;
     wrap.innerHTML = '';
   }
   if (!miniVideo) {
@@ -99,10 +216,8 @@ function renderMini() {
     miniVideo.addEventListener('ended', () => {
       if (miniClipKind !== 'idle') playMiniClip('idle');
     });
-    miniVideo.addEventListener('error', () => {
-      wrap.innerHTML = `<div class="avatar-placeholder">${currentCharacterLabel()}</div>`;
-      miniVideo = null;
-    });
+    miniVideo.addEventListener('canplay', () => { miniRetryUsed = false; flushPendingMiniClip(true); });
+    miniVideo.addEventListener('error', () => onMiniVideoError(wrap));
     wrap.appendChild(miniVideo);
     playMiniClip('idle');
     // 展開側で褒められた直後にミニへ戻ってきたら、SD ジャンプで迎える
@@ -371,16 +486,108 @@ function currentClipSrc(kind) {
   return full[kind] || full.idle;
 }
 
-function playClip(kind) {
-  if (!videoEl || !agentEnabled()) return;
+/* クリップ切替の直列化とエラー復帰（不具合2対策、判断は clipguard.js）
+ * 根本対策は Blob URL 化（resolveMediaSrc）で、ここはその上での防御:
+ * - 切替の読み込みが終わるまで次の切替は保留する（割り込みを作らない）
+ * - error が来ても、保留の適用→1回だけ再読み込み→致命、の順に段階復帰する
+ * - 起動時は idle を経由せず挨拶を直接始める（二重切替の排除） */
+let clipInFlight = false;
+let pendingClipKind = null;
+let clipRetryUsed = false;
+let currentClipPath = null; // 設定済み（または適用中）の論理パス
+
+function applyClip(kind, { force = false } = {}) {
+  if (!videoEl) return;
   const full = clipsFor(currentCharacterId(), 'full');
   clipKind = full[kind] ? kind : 'idle';
-  const src = currentClipSrc(clipKind);
+  const path = currentClipSrc(clipKind);
   videoEl.loop = clipKind === 'idle';
-  if (videoEl.getAttribute('src') !== src) videoEl.setAttribute('src', src);
+  const url = resolveMediaSrc(path);
+  if (!url) {
+    pendingClipKind = clipKind; // Blob が届いたら flush 側で適用する
+    return;
+  }
+  if (force) {
+    videoEl.removeAttribute('src');
+    try { videoEl.load(); } catch { /* 無視 */ }
+    currentClipPath = null;
+  }
+  if (currentClipPath !== path) {
+    videoEl.setAttribute('src', url);
+    currentClipPath = path;
+    clipInFlight = true;
+  }
   try { videoEl.currentTime = 0; } catch { /* メタデータ未読込時は無視 */ }
   const p = videoEl.play();
   if (p && typeof p.catch === 'function') p.catch(() => { /* 自動再生不可の環境では静止画のまま */ });
+}
+
+function playClip(kind) {
+  if (!videoEl || !agentEnabled()) return;
+  const full = clipsFor(currentCharacterId(), 'full');
+  const want = full[kind] ? kind : 'idle';
+  const action = window.ClipGuard.nextAction({
+    currentSrc: currentClipPath,
+    requestedSrc: currentClipSrc(want),
+    inFlight: clipInFlight,
+    readyState: videoEl.readyState,
+  });
+  if (action === 'switch') {
+    pendingClipKind = null;
+    applyClip(want);
+  } else if (action === 'defer') {
+    pendingClipKind = want; // 読み込みが落ち着いたら canplay 側で適用する
+  } else if (action === 'restart') {
+    if (want !== 'idle') applyClip(want); // 褒めの再要求は先頭から
+    else if (videoEl.paused) { const p = videoEl.play(); if (p && p.catch) p.catch(() => {}); }
+  } else if (videoEl.paused && !clipInFlight) {
+    const p = videoEl.play();
+    if (p && typeof p.catch === 'function') p.catch(() => { /* 同上 */ });
+  }
+}
+
+// 保留中の切替の適用。settled=true は canplay（読み込みが落ち着いた）から、
+// settled=false は Blob 取得完了から。読み込み中（inFlight）の間は、
+// loadedmetadata 段階でデマルチプレクサがまだ開きかけのため切替やシークが
+// 割り込むと DEMUXER_ERROR_COULD_NOT_OPEN になるので、settled 側に委ねる。
+function flushPendingClip(settled) {
+  if (!videoEl || !pendingClipKind) {
+    if (settled) clipInFlight = false;
+    return;
+  }
+  if (clipInFlight && !settled) return;
+  clipInFlight = false;
+  const kind = pendingClipKind;
+  pendingClipKind = null;
+  if (currentClipPath !== currentClipSrc(kind)) applyClip(kind);
+}
+
+function onVideoError(mount) {
+  const action = window.ClipGuard.errorAction({
+    hasPending: !!pendingClipKind,
+    retryUsed: clipRetryUsed,
+  });
+  if (action === 'apply-pending') {
+    clipInFlight = false;
+    const kind = pendingClipKind;
+    pendingClipKind = null;
+    applyClip(kind, { force: true });
+    return;
+  }
+  if (action === 'retry') {
+    clipRetryUsed = true;
+    clipInFlight = false;
+    const kind = clipKind;
+    setTimeout(() => { if (videoEl) applyClip(kind, { force: true }); }, 350);
+    return;
+  }
+  mount.innerHTML = `<div class="avatar-placeholder">${currentCharacterLabel()}（動画を読み込めませんでした）</div>`;
+  videoEl = null;
+  charStarted = false;
+  clipInFlight = false;
+  pendingClipKind = null;
+  clipRetryUsed = false;
+  currentClipPath = null;
 }
 
 function stopCharacter() {
@@ -390,6 +597,9 @@ function stopCharacter() {
     try { videoEl.load(); } catch { /* 無視 */ }
   }
   clipKind = 'idle';
+  clipInFlight = false;
+  pendingClipKind = null;
+  currentClipPath = null;
 }
 
 function renderCharacter() {
@@ -424,13 +634,19 @@ function renderCharacter() {
     videoEl.addEventListener('ended', () => {
       if (clipKind !== 'idle') playClip('idle');
     });
-    videoEl.addEventListener('error', () => {
-      mount.innerHTML = `<div class="avatar-placeholder">${currentCharacterLabel()}（動画を読み込めませんでした）</div>`;
-      videoEl = null;
-      charStarted = false;
-    });
+    videoEl.addEventListener('canplay', () => { clipRetryUsed = false; flushPendingClip(true); });
+    videoEl.addEventListener('error', () => onVideoError(mount));
     mount.appendChild(videoEl);
-    playClip('idle');
+    // 起動時は idle を経由せず、挨拶を直接始める（切替の二重化が割り込みの温床になる）。
+    // エラー復帰で要素を作り直した時は、挨拶済みなら待機から再開する（再挨拶しない）。
+    if (!greeted && state && state.settings) {
+      greeted = true;
+      applyClip('greeting');
+      say('greeting');
+      playVoice('greeting');
+    } else {
+      applyClip('idle');
+    }
   } else if (videoEl && (!videoEl.getAttribute('src') || videoEl.paused)) {
     // オフ→オン、または他モードから展開に戻った時は再生を再開する
     playClip(clipKind);
@@ -443,19 +659,21 @@ function renderCharacter() {
   }
 }
 
-/* ---- ボイス再生（設定ゲート） ----
- * ボイスの事前合成ファイル同梱はフェーズ1。現時点では VOICE_FILES は
- * 全キャラ空で、playVoice は設定（voiceEnabled）を確認するだけの
- * ゲートとして先行実装してある。ファイルが同梱されたら、ここへ
- * { greeting, praise, complete } のパスを登録するだけで再生が有効になる。 */
-const VOICE_FILES = { momo: {}, suzuran: {}, mimoza: {} };
+/* ---- ボイス再生（ボイスパック連動） ----
+ * 音声はアプリに同梱せず、userData の voice/ フォルダに置かれた
+ * ボイスパックをメイン側が検出して snapshot.voiceFiles で渡す。
+ * パックが無い環境では playVoice は何もせず、設定のボイス項目も出さない。 */
 let voiceAudio = null;
+
+function voiceAvailable() {
+  return !!(state && state.voiceAvailable);
+}
 
 function playVoice(kind) {
   if (!agentEnabled() || !voiceEnabled()) return;
-  const files = VOICE_FILES[currentCharacterId()] || {};
+  const files = (state && state.voiceFiles && state.voiceFiles[currentCharacterId()]) || {};
   const src = files[kind];
-  if (!src) return; // ボイス未同梱（フェーズ1で追加）
+  if (!src) return; // その場面のボイスがパックに無い
   if (!voiceAudio) voiceAudio = new Audio();
   if (voiceAudio.getAttribute('src') !== src) voiceAudio.setAttribute('src', src);
   try { voiceAudio.currentTime = 0; } catch { /* 無視 */ }
@@ -547,11 +765,15 @@ function renderSettings() {
     row.appendChild(sw);
     return row;
   };
-  body.appendChild(toggleRow(
-    'ボイス（挨拶・褒め・全完了の声）',
-    voiceEnabled(),
-    (v) => window.maid.setVoiceEnabled(v),
-  ));
+  // ボイス関連の設定は、ボイスパック（userData の voice/ フォルダ）が
+  // 存在する環境でのみ表示する。無い環境では項目ごと出さない。
+  if (voiceAvailable()) {
+    body.appendChild(toggleRow(
+      'ボイス（挨拶・褒め・全完了の声）',
+      voiceEnabled(),
+      (v) => window.maid.setVoiceEnabled(v),
+    ));
+  }
   body.appendChild(toggleRow(
     '吹き出し（台詞の表示。オフでもキャラは表示されます）',
     bubbleEnabled(),
