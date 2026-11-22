@@ -195,15 +195,21 @@ function renderMini() {
   }
   wrap.style.display = '';
   wrap.title = currentCharacterLabel();
-  // キャラが切り替わっていたら、SD クリップも新しいキャラのものへ作り替える
-  if (miniVideo && miniCharacter !== currentCharacterId()) {
+  // キャラが切り替わっていたら、ミニ表示も新しいキャラのものへ作り替える
+  if (miniCharacter !== currentCharacterId()) {
     miniVideo = null;
+    miniImgEl = null;
+    miniLive2dEl = null;
     miniInFlight = false;
     pendingMiniKind = null;
     miniRetryUsed = false;
     miniCurrentClipPath = null;
+    if (miniImgTimer) { clearTimeout(miniImgTimer); miniImgTimer = null; }
     wrap.innerHTML = '';
   }
+  const miniType = displayType();
+  if (miniType === 'image') { renderMiniImage(wrap); return; }
+  if (miniType === 'live2d') { renderMiniLive2d(wrap); return; }
   if (!miniVideo) {
     miniCharacter = currentCharacterId();
     wrap.innerHTML = '';
@@ -225,6 +231,56 @@ function renderMini() {
   } else if (!miniVideo.getAttribute('src') || miniVideo.paused) {
     playMiniClip(miniClipKind);
   }
+}
+
+/* ---- ミニ表示：立ち絵（type=image）／Live2D 受け口 ---- */
+let miniImgEl = null;
+let miniImgScene = 'idle';
+let miniImgTimer = null;
+let miniLive2dEl = null;
+
+function setMiniImageScene(kind) {
+  miniImgScene = kind;
+  if (!miniImgEl) return;
+  const sd = imagesFor(currentCharacterId(), 'sd');
+  const src = kind === 'praise' ? (sd.jump || sd.idle) : sd.idle;
+  if (src && miniImgEl.getAttribute('src') !== src) miniImgEl.setAttribute('src', src);
+  if (miniImgTimer) { clearTimeout(miniImgTimer); miniImgTimer = null; }
+  if (kind !== 'idle') {
+    miniImgTimer = setTimeout(() => setMiniImageScene('idle'), 3000);
+  }
+}
+
+function renderMiniImage(wrap) {
+  if (!miniImgEl) {
+    miniCharacter = currentCharacterId();
+    wrap.innerHTML = '';
+    miniImgEl = document.createElement('img');
+    miniImgEl.id = 'mini-image';
+    miniImgEl.alt = `${currentCharacterLabel()}（SD）`;
+    wrap.appendChild(miniImgEl);
+    setMiniImageScene('idle');
+    if (Date.now() - lastPraiseAt < 5000) setMiniImageScene('praise');
+  }
+}
+
+function renderMiniLive2d(wrap) {
+  if (!miniLive2dEl) {
+    miniCharacter = currentCharacterId();
+    wrap.innerHTML = '';
+    miniLive2dEl = document.createElement('div');
+    miniLive2dEl.className = 'avatar-placeholder';
+    miniLive2dEl.textContent = currentCharacterLabel();
+    wrap.appendChild(miniLive2dEl);
+  }
+}
+
+// ミニ側の場面表示をキャラの表示形式に振り分ける
+function playMiniScene(kind) {
+  const t = displayType();
+  if (t === 'image') { setMiniImageScene(kind); return; }
+  if (t === 'live2d') return;
+  playMiniClip(kind);
 }
 
 /* ---- チェックリスト（feat/checklist-reset） ---- */
@@ -323,11 +379,11 @@ function onItemChecked(period, item, checked, complete) {
   if (complete) {
     say('complete');
     playVoice('complete');
-    playClip('praise');
+    showScene('complete');
   } else {
     say('praise');
     playVoice('praise');
-    playClip('praise');
+    showScene('praise');
   }
 }
 
@@ -391,57 +447,39 @@ function renderResources() {
  * 割当はドックの状態で決まる（旧・ステージの高さによる SD 切替は廃止）。
  * 設定でエージェント表示をオフにすると、キャラ表示と吹き出しは完全に消え、
  * 数値管理はリスト側へ移して管理機能だけが残る。 */
-const CHARACTER_LABELS = { momo: 'モモ', suzuran: 'スズラン', mimoza: 'ミモザ' };
-const CLIPS = {
-  // クリップは 2026-11-22 に新原画（シート→Codex の透過静止画）から作り直した版。
-  // 待機はクリーン区間の往復再生化、挨拶は動作が収まる範囲へトリミング済み。
-  momo: {
-    full: {
-      idle: 'assets/momo-idle.mp4', // クリーン区間 0〜5s を往復再生化
-      greeting: 'assets/momo-greeting.mp4', // 0〜8.5s（お辞儀→復帰まで）
-      praise: 'assets/momo-praise.mp4',
-    },
-    sd: {
-      idle: 'assets/momo-sd-idle.mp4', // クリーン区間 0〜4s を往復再生化（後半はカメラの寄り）
-      greeting: null, // SD の挨拶クリップは無いので待機で代用する
-      praise: 'assets/momo-sd-jump.mp4',
-    },
-  },
-  suzuran: {
-    full: {
-      idle: 'assets/suzuran-idle.mp4', // クリーン区間 6.0〜9.95s を往復再生化（冒頭は画角が落ち着くまで不安定）
-      greeting: 'assets/suzuran-greeting.mp4',
-      praise: 'assets/suzuran-praise.mp4',
-    },
-    sd: {
-      idle: 'assets/suzuran-sd-idle.mp4', // 0.5〜5.5s を往復再生化
-      greeting: null, // SD の挨拶クリップは無いので待機で代用する
-      praise: 'assets/suzuran-sd-jump.mp4', // 冒頭の寄りを避けて 1〜10s
-    },
-  },
-  mimoza: {
-    full: {
-      idle: 'assets/mimosa-idle.mp4', // クリーン区間 5.0〜9.5s を往復再生化
-      greeting: 'assets/mimosa-greeting.mp4', // 0〜9.8s（お辞儀→復帰まで）
-      praise: 'assets/mimosa-praise.mp4',
-    },
-    sd: {
-      idle: 'assets/mimosa-sd-idle.mp4', // クリーン区間 2.0〜7.0s を往復再生化
-      greeting: null, // SD の挨拶クリップは無いので待機で代用する
-      praise: 'assets/mimosa-sd-jump.mp4',
-    },
+/* キャラ定義はメイン側（src/characters.js）が解決して snapshot.characters で
+ * 渡す（組み込み3人＋ユーザー追加）。ここはハードコードを持たず、定義に
+ * 従って表示するだけにする（キャラ・形式の追加で本体を書き換えない）。 */
+const FALLBACK_CHARACTER = {
+  id: 'momo', name: 'モモ', type: 'video', builtin: true,
+  clips: {
+    full: { idle: 'assets/momo-idle.mp4', greeting: 'assets/momo-greeting.mp4', praise: 'assets/momo-praise.mp4' },
+    sd: { idle: 'assets/momo-sd-idle.mp4', greeting: null, praise: 'assets/momo-sd-jump.mp4' },
   },
 };
 
+function characterDef(id) {
+  const list = (state && state.characters) || [];
+  return list.find((c) => c.id === (id || currentCharacterId())) || FALLBACK_CHARACTER;
+}
 function currentCharacterId() {
   return (state && state.settings && state.settings.character) || 'momo';
 }
 function currentCharacterLabel() {
-  return CHARACTER_LABELS[currentCharacterId()] || 'モモ';
+  return characterDef().name || 'モモ';
+}
+function displayType() {
+  return characterDef().type || 'video';
 }
 function clipsFor(character, form) {
-  const set = CLIPS[character] || CLIPS.momo;
-  return set[form] || set.full;
+  const def = characterDef(character);
+  const set = def.clips || {};
+  return set[form] || set.full || { idle: null, greeting: null, praise: null };
+}
+function imagesFor(character, form) {
+  const def = characterDef(character);
+  const set = def.images || {};
+  return set[form] || set.full || { idle: null };
 }
 
 let videoEl = null;
@@ -602,6 +640,80 @@ function stopCharacter() {
   currentClipPath = null;
 }
 
+/* ---- 立ち絵＋表情差分（type=image）の表示 ----
+ * 場面ごとに表情差分画像を切り替え、一定時間で待機（idle）へ戻す。
+ * 動画のような読み込み競合は無いので、単純なタイマーで足りる。 */
+let imgEl = null;
+let imgScene = 'idle';
+let imgSceneTimer = null;
+let imgStarted = false;
+
+function setImageScene(kind) {
+  imgScene = kind;
+  if (!imgEl) return;
+  const full = imagesFor(currentCharacterId(), 'full');
+  const src = full[kind] || full.idle;
+  if (src && imgEl.getAttribute('src') !== src) imgEl.setAttribute('src', src);
+  if (imgSceneTimer) { clearTimeout(imgSceneTimer); imgSceneTimer = null; }
+  if (kind !== 'idle') {
+    const ms = kind === 'greeting' ? 4000 : kind === 'complete' ? 5000 : 3500;
+    imgSceneTimer = setTimeout(() => { if (imgScene !== 'idle') setImageScene('idle'); }, ms);
+  }
+}
+
+function renderImageCharacter(mount) {
+  if (!imgStarted) {
+    imgStarted = true;
+    mount.innerHTML = '';
+    imgEl = document.createElement('img');
+    imgEl.id = 'char-image';
+    imgEl.alt = currentCharacterLabel();
+    mount.appendChild(imgEl);
+    if (!greeted && state && state.settings) {
+      greeted = true;
+      setImageScene('greeting');
+      say('greeting');
+      playVoice('greeting');
+      return;
+    }
+    setImageScene('idle');
+  }
+  if (!greeted && state && state.settings) {
+    greeted = true;
+    setImageScene('greeting');
+    say('greeting');
+    playVoice('greeting');
+  }
+}
+
+/* ---- Live2D（type=live2d）は受け口のみ ----
+ * モデルの検出・登録・選択までは対応するが、ランタイム再生は未対応。
+ * 完成したことにせず、未対応であることを画面に出す。 */
+let live2dStarted = false;
+
+function renderLive2dCharacter(mount) {
+  if (live2dStarted) return;
+  live2dStarted = true;
+  mount.innerHTML = '';
+  const div = document.createElement('div');
+  div.className = 'avatar-placeholder';
+  div.textContent = `${currentCharacterLabel()}（Live2D モデル登録済み・再生は未対応です）`;
+  mount.appendChild(div);
+  if (!greeted && state && state.settings) {
+    greeted = true;
+    say('greeting');
+    playVoice('greeting');
+  }
+}
+
+// 場面の表示をキャラの表示形式に振り分ける（チェック時の反応など）
+function showScene(kind) {
+  const t = displayType();
+  if (t === 'image') { setImageScene(kind); return; }
+  if (t === 'live2d') return;
+  playClip(kind === 'complete' ? 'praise' : kind);
+}
+
 function renderCharacter() {
   const stage = document.getElementById('avatar-stage');
   if (!stage) return;
@@ -612,6 +724,29 @@ function renderCharacter() {
   // 等身クリップは展開表示の時だけ鳴らす（ミニ／最小化では止めておく）
   if (dockMode() !== 'expanded') {
     if (videoEl) { try { videoEl.pause(); } catch { /* 無視 */ } }
+    return;
+  }
+  // キャラが切り替わったら、前キャラの表示要素を片付けて挨拶から出し直す
+  if (displayedCharacter !== currentCharacterId()) {
+    displayedCharacter = currentCharacterId();
+    greeted = false;
+    lastLineText = '';
+    stopCharacter();
+    if (videoEl) { videoEl.remove(); videoEl = null; }
+    charStarted = false;
+    imgStarted = false;
+    imgEl = null;
+    if (imgSceneTimer) { clearTimeout(imgSceneTimer); imgSceneTimer = null; }
+    imgScene = 'idle';
+    live2dStarted = false;
+    const m0 = document.getElementById('avatar-frame');
+    if (m0) m0.innerHTML = '';
+  }
+  const type = displayType();
+  if (type === 'image' || type === 'live2d') {
+    const mount = document.getElementById('avatar-frame') || stage;
+    if (type === 'image') renderImageCharacter(mount);
+    else renderLive2dCharacter(mount);
     return;
   }
   // キャラが切り替わったら、新しいキャラの挨拶から出し直す
@@ -688,7 +823,8 @@ function say(kind) {
   if (!agentEnabled()) return;
   if (!bubbleEnabled()) return;
   if (!state || !state.lines) return;
-  const address = state.settings.address || 'ご主人様';
+  // 呼び方はメイン側で解決済み（キャラごとの設定 > 定義の既定 > 全体設定）
+  const address = state.address || state.settings.address || 'ご主人様';
   const arr = state.lines[kind] || [];
   if (arr.length === 0) return;
   let text = '';
@@ -703,8 +839,207 @@ function say(kind) {
 }
 
 /* ---- 設定（feat/settings） ----
- * 呼び方の変更、キャラ選択（モモ／スズラン有効、ミモザは準備中）、
+ * 呼び方の変更、キャラ選択（組み込み＋ユーザー追加）、キャラ登録、
  * 2週間周期のアンカー日、項目ごとの通知オン/オフ（保存のみ・発火はフェーズ1）。 */
+
+/* キャラ登録フォームの入力保持。renderSettings は state 更新のたびに再構築
+ * されるので、入力中の内容はここに退避して復元する。 */
+const regState = {
+  name: '', type: 'video',
+  addressCandidates: '', addressDefault: '',
+  lines: { greeting: '', praise: '', complete: '' },
+  files: {}, voiceFiles: {}, extras: [],
+  status: '',
+};
+
+const REG_SLOTS = {
+  video: [
+    ['idle', '待機クリップ（必須）', 'video'],
+    ['greeting', '挨拶クリップ（必須）', 'video'],
+    ['praise', '褒めクリップ（必須）', 'video'],
+    ['sdIdle', 'SD待機クリップ（任意）', 'video'],
+    ['sdJump', 'SD喜ぶクリップ（任意）', 'video'],
+  ],
+  image: [
+    ['idle', '待機の立ち絵（必須）', 'image'],
+    ['greeting', '挨拶の表情差分（必須）', 'image'],
+    ['praise', '褒めの表情差分（必須）', 'image'],
+    ['complete', '全完了の表情差分（必須）', 'image'],
+    ['sdIdle', 'SD待機（任意）', 'image'],
+    ['sdJump', 'SD喜ぶ（任意）', 'image'],
+  ],
+  live2d: [
+    ['model', 'モデルファイル（*.model3.json・必須）', 'model'],
+  ],
+};
+const REG_VOICE_SLOTS = [
+  ['greeting', '挨拶ボイス（任意）'],
+  ['praise', '褒めボイス（任意）'],
+  ['complete', '全完了ボイス（任意）'],
+];
+
+function regEl(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+function renderRegistrationForm(body) {
+  const h = regEl('h3', null, 'キャラクター追加');
+  body.appendChild(h);
+  const intro = regEl('p', 'setting-note',
+    '表示形式を選んで、名前・台詞・素材を登録します。登録したキャラは上のキャラ選択に現れます。');
+  body.appendChild(intro);
+
+  const nameRow = regEl('div', 'setting-row');
+  nameRow.appendChild(regEl('span', 's-label', '名前'));
+  const nameInput = regEl('input');
+  nameInput.type = 'text';
+  nameInput.value = regState.name;
+  nameInput.placeholder = '例：ミモザ';
+  nameInput.addEventListener('input', () => { regState.name = nameInput.value; });
+  nameRow.appendChild(nameInput);
+  body.appendChild(nameRow);
+
+  const typeRow = regEl('div', 'setting-row');
+  typeRow.appendChild(regEl('span', 's-label', '表示形式'));
+  const typeSel = regEl('select');
+  const typeOpts = [
+    ['video', 'アニメーション（動画：mp4 / webm）'],
+    ['image', '立ち絵（＋表情差分）'],
+    ['live2d', 'Live2D（登録・検出のみ／再生は未対応）'],
+  ];
+  for (const [v, label] of typeOpts) {
+    const opt = regEl('option', null, label);
+    opt.value = v;
+    if (regState.type === v) opt.selected = true;
+    typeSel.appendChild(opt);
+  }
+  typeSel.addEventListener('change', () => {
+    regState.type = typeSel.value;
+    regState.files = {};
+    renderSettings();
+  });
+  typeRow.appendChild(typeSel);
+  body.appendChild(typeRow);
+
+  const addrRow = regEl('div', 'setting-row');
+  addrRow.appendChild(regEl('span', 's-label', '呼び方の候補（任意・カンマ区切り）'));
+  const addrInput = regEl('input');
+  addrInput.type = 'text';
+  addrInput.value = regState.addressCandidates;
+  addrInput.placeholder = '例：ご主人様, お嬢様';
+  addrInput.addEventListener('input', () => { regState.addressCandidates = addrInput.value; });
+  addrRow.appendChild(addrInput);
+  body.appendChild(addrRow);
+
+  const addrDefRow = regEl('div', 'setting-row');
+  addrDefRow.appendChild(regEl('span', 's-label', '既定の呼び方（任意）'));
+  const addrDefInput = regEl('input');
+  addrDefInput.type = 'text';
+  addrDefInput.value = regState.addressDefault;
+  addrDefInput.placeholder = '候補の中から1つ';
+  addrDefInput.addEventListener('input', () => { regState.addressDefault = addrDefInput.value; });
+  addrDefRow.appendChild(addrDefInput);
+  body.appendChild(addrDefRow);
+
+  for (const [kind, label] of [['greeting', '挨拶の台詞'], ['praise', '褒めの台詞'], ['complete', '全完了の台詞']]) {
+    const row = regEl('div', 'setting-row');
+    row.appendChild(regEl('span', 's-label', `${label}（1行に1台詞・{address} が呼び方に置き換わります）`));
+    const ta = regEl('textarea');
+    ta.rows = 2;
+    ta.value = regState.lines[kind];
+    ta.addEventListener('input', () => { regState.lines[kind] = ta.value; });
+    row.appendChild(ta);
+    body.appendChild(row);
+  }
+
+  const fileLabel = regEl('p', 'setting-note',
+    regState.type === 'video' ? 'モーション（場面ごとのクリップ。対応拡張子：mp4 / webm）'
+      : regState.type === 'image' ? '立ち絵・表情差分（対応拡張子：png / jpg / webp）'
+        : 'Live2D モデル（model3.json。テクスチャ等の同梱ファイルも一緒に選べます）');
+  body.appendChild(fileLabel);
+
+  const addPickRow = (store, slot, label, kind) => {
+    const row = regEl('div', 'setting-row');
+    row.appendChild(regEl('span', 's-label', label));
+    const btn = regEl('button', 'mini-action', 'ファイルを選ぶ');
+    btn.type = 'button';
+    const chosen = regEl('span', 'setting-note', store[slot] ? store[slot].split(/[\\/]/).pop() : '未選択');
+    btn.addEventListener('click', async () => {
+      const picked = await window.maid.pickFile(kind);
+      if (picked) {
+        store[slot] = picked;
+        chosen.textContent = picked.split(/[\\/]/).pop();
+      }
+    });
+    row.appendChild(btn);
+    row.appendChild(chosen);
+    body.appendChild(row);
+  };
+  for (const [slot, label, kind] of REG_SLOTS[regState.type] || []) {
+    addPickRow(regState.files, slot, label, kind);
+  }
+  if (regState.type === 'live2d') {
+    const row = regEl('div', 'setting-row');
+    row.appendChild(regEl('span', 's-label', '同梱ファイル（任意・テクスチャ等）'));
+    const btn = regEl('button', 'mini-action', '追加する');
+    btn.type = 'button';
+    const chosen = regEl('span', 'setting-note',
+      regState.extras.length > 0 ? `${regState.extras.length} 件選択中` : '未選択');
+    btn.addEventListener('click', async () => {
+      const picked = await window.maid.pickFile('any');
+      if (picked) {
+        regState.extras.push(picked);
+        chosen.textContent = `${regState.extras.length} 件選択中`;
+      }
+    });
+    row.appendChild(btn);
+    row.appendChild(chosen);
+    body.appendChild(row);
+  }
+
+  body.appendChild(regEl('p', 'setting-note', 'ボイス（任意・対応拡張子：mp3 / wav）'));
+  for (const [kind, label] of REG_VOICE_SLOTS) {
+    addPickRow(regState.voiceFiles, kind, label, 'audio');
+  }
+
+  const submitRow = regEl('div', 'setting-row');
+  const submitBtn = regEl('button', 'mini-action', 'このキャラを登録する');
+  submitBtn.type = 'button';
+  submitBtn.addEventListener('click', async () => {
+    const splitLines = (s) => s.split('\n').map((x) => x.trim()).filter(Boolean);
+    const payload = {
+      name: regState.name.trim(),
+      type: regState.type,
+      lines: {
+        greeting: splitLines(regState.lines.greeting),
+        praise: splitLines(regState.lines.praise),
+        complete: splitLines(regState.lines.complete),
+      },
+      addressCandidates: regState.addressCandidates.split(/[,、，]/).map((x) => x.trim()).filter(Boolean),
+      addressDefault: regState.addressDefault.trim(),
+      files: { ...regState.files, extras: regState.extras },
+      voiceFiles: { ...regState.voiceFiles },
+    };
+    const r = await window.maid.registerCharacter(payload);
+    if (r && r.ok) {
+      regState.status = `「${payload.name}」を登録しました`;
+      regState.name = ''; regState.files = {}; regState.voiceFiles = {}; regState.extras = [];
+      if (r.state) state = r.state;
+      render();
+    } else {
+      regState.status = `登録できませんでした：${(r && r.error) || '不明なエラー'}`;
+      renderSettings();
+    }
+  });
+  submitRow.appendChild(submitBtn);
+  body.appendChild(submitRow);
+  if (regState.status) {
+    body.appendChild(regEl('p', 'setting-note', regState.status));
+  }
+}
 function notifyValueOf(item) {
   const saved = state.settings.notify && state.settings.notify[item.id];
   if (typeof saved === 'boolean') return saved;
@@ -812,19 +1147,14 @@ function renderSettings() {
   charRow.className = 'setting-row';
   const charLabel = document.createElement('span');
   charLabel.className = 's-label';
-  charLabel.textContent = '常駐するメイド';
+  charLabel.textContent = '常駐するキャラ';
   charRow.appendChild(charLabel);
   const charSel = document.createElement('select');
-  const chars = [
-    { id: 'momo', label: 'モモ', ready: true },
-    { id: 'suzuran', label: 'スズラン', ready: true },
-    { id: 'mimoza', label: 'ミモザ', ready: true },
-  ];
-  for (const c of chars) {
+  const typeSuffix = { video: '', image: '（立ち絵）', live2d: '（Live2D・再生未対応）' };
+  for (const c of state.characters || []) {
     const opt = document.createElement('option');
     opt.value = c.id;
-    opt.textContent = c.label;
-    opt.disabled = !c.ready;
+    opt.textContent = c.name + (typeSuffix[c.type] || '');
     if (state.settings.character === c.id) opt.selected = true;
     charSel.appendChild(opt);
   }
@@ -834,6 +1164,93 @@ function renderSettings() {
   });
   charRow.appendChild(charSel);
   body.appendChild(charRow);
+
+  // キャラごとの呼び方（未設定なら全体設定を使う）
+  const curDef = characterDef();
+  const charAddrRow = document.createElement('div');
+  charAddrRow.className = 'setting-row';
+  const charAddrLabel = document.createElement('span');
+  charAddrLabel.className = 's-label';
+  charAddrLabel.textContent = `${curDef.name} の呼び方`;
+  charAddrRow.appendChild(charAddrLabel);
+  const charAddrSel = document.createElement('select');
+  const optGlobal = document.createElement('option');
+  optGlobal.value = '';
+  optGlobal.textContent = '全体設定を使う';
+  charAddrSel.appendChild(optGlobal);
+  const candidates = (curDef.addressCandidates && curDef.addressCandidates.length > 0)
+    ? curDef.addressCandidates : ['ご主人様', 'お嬢様'];
+  for (const cand of candidates) {
+    const opt = document.createElement('option');
+    opt.value = cand;
+    opt.textContent = cand;
+    charAddrSel.appendChild(opt);
+  }
+  charAddrSel.value = (state.settings.characterAddress || {})[curDef.id] || '';
+  charAddrSel.addEventListener('change', async () => {
+    state = await window.maid.setCharacterAddress(curDef.id, charAddrSel.value || null);
+    render();
+  });
+  charAddrRow.appendChild(charAddrSel);
+  body.appendChild(charAddrRow);
+
+  // 定義が壊れているユーザーキャラがいれば知らせる
+  for (const err of state.characterErrors || []) {
+    const note = document.createElement('p');
+    note.className = 'setting-note';
+    note.textContent = `キャラ「${err.id}」を読み込めませんでした：${err.message}`;
+    body.appendChild(note);
+  }
+
+  // パッケージ書き出し／読み込み／削除（ユーザー追加キャラ）
+  const pkgRow = document.createElement('div');
+  pkgRow.className = 'setting-row';
+  const pkgLabel = document.createElement('span');
+  pkgLabel.className = 's-label';
+  pkgLabel.textContent = 'キャラ設定パッケージ';
+  pkgRow.appendChild(pkgLabel);
+  const exportBtn = document.createElement('button');
+  exportBtn.type = 'button';
+  exportBtn.className = 'mini-action';
+  exportBtn.textContent = '書き出し';
+  exportBtn.addEventListener('click', async () => {
+    const r = await window.maid.exportCharacter(curDef.id);
+    regState.status = r && r.ok ? `書き出しました：${r.path}` :
+      (r && r.canceled ? '' : `書き出しに失敗しました：${(r && r.error) || ''}`);
+    renderSettings();
+  });
+  pkgRow.appendChild(exportBtn);
+  const importBtn = document.createElement('button');
+  importBtn.type = 'button';
+  importBtn.className = 'mini-action';
+  importBtn.textContent = '読み込み';
+  importBtn.addEventListener('click', async () => {
+    const r = await window.maid.importCharacter();
+    if (r && r.ok) {
+      regState.status = `キャラを読み込みました（ID: ${r.id}）`;
+      if (r.state) state = r.state;
+      render();
+    } else {
+      regState.status = r && r.canceled ? '' : `読み込みに失敗しました：${(r && r.error) || ''}`;
+      renderSettings();
+    }
+  });
+  pkgRow.appendChild(importBtn);
+  if (!curDef.builtin) {
+    const delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.className = 'mini-action';
+    delBtn.textContent = 'このキャラを削除';
+    delBtn.addEventListener('click', async () => {
+      state = await window.maid.deleteCharacter(curDef.id);
+      regState.status = `「${curDef.name}」を削除しました`;
+      render();
+    });
+    pkgRow.appendChild(delBtn);
+  }
+  body.appendChild(pkgRow);
+
+  renderRegistrationForm(body);
 
   const hAnchor = document.createElement('h3');
   hAnchor.textContent = '2週間周期';
@@ -941,7 +1358,7 @@ window.addEventListener('DOMContentLoaded', () => {
   miniView.addEventListener('click', () => setDock('expanded'));
   document.getElementById('mini-char').addEventListener('click', (e) => {
     e.stopPropagation(); // キャラをクリックした時は展開せず SD ジャンプ
-    playMiniClip('praise');
+    playMiniScene('praise');
   });
   document.getElementById('btn-mini-expand').addEventListener('click', (e) => { e.stopPropagation(); setDock('expanded'); });
   document.getElementById('btn-mini-tasks').addEventListener('click', (e) => { e.stopPropagation(); setDock('expanded'); });
