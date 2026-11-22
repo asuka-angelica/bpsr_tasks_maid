@@ -1,6 +1,6 @@
 'use strict';
 // main.js — Electron メインプロセス（フェーズ0）
-// データはローカルJSONのみ。外部送信は一切しない（ガーディアンと同じ原則）。
+// データはローカルJSONのみ。外部送信は一切しない。
 // レンダラーはカスタムスキーム maid:// で配信する（file:// の制限を避け、
 // キャラ動画をストリーミング再生できるようにするため）。
 
@@ -28,33 +28,40 @@ process.on('unhandledRejection', (reason) => {
   try { console.error('[unhandledRejection]', reason); } catch { /* 同上 */ }
 });
 
+/* 配信先の解決（レビュー高3）：文字列の前方一致ではなく、リンク解決後の
+ * 実パスがベース配下にあることを確認する。ファイルが無い場合も null。 */
+function resolveWithinBase(base, rel) {
+  let baseReal;
+  try { baseReal = fs.realpathSync(base); } catch { return null; }
+  const target = path.resolve(baseReal, rel);
+  let real;
+  try { real = fs.realpathSync(target); } catch { return null; }
+  if (real !== baseReal && !real.startsWith(baseReal + path.sep)) return null;
+  return real;
+}
+
 function registerProtocol() {
   protocol.handle('maid', (request) => {
     try {
       const url = new URL(request.url);
+      if (url.hostname !== 'app') {
+        return new Response('forbidden', { status: 403 });
+      }
       const rel = decodeURIComponent(url.pathname).replace(/^\/+/, '');
       // ボイスパックは userData/voice/ から配信する（アプリ本体には含めない）
       if (rel.startsWith('voice/')) {
-        const base = voiceDirPath();
-        const filePath = path.join(base, rel.slice('voice/'.length));
-        if (!filePath.startsWith(base)) {
-          return new Response('forbidden', { status: 403 });
-        }
+        const filePath = resolveWithinBase(voiceDirPath(), rel.slice('voice/'.length));
+        if (!filePath) return new Response('not found', { status: 404 });
         return net.fetch(pathToFileURL(filePath).toString());
       }
       // ユーザー追加キャラの素材は userData/characters/ から配信する
       if (rel.startsWith('characters/')) {
-        const base = charactersDirPath();
-        const filePath = path.join(base, rel.slice('characters/'.length));
-        if (!filePath.startsWith(base)) {
-          return new Response('forbidden', { status: 403 });
-        }
+        const filePath = resolveWithinBase(charactersDirPath(), rel.slice('characters/'.length));
+        if (!filePath) return new Response('not found', { status: 404 });
         return net.fetch(pathToFileURL(filePath).toString());
       }
-      const filePath = path.join(RENDERER_DIR, rel || 'index.html');
-      if (!filePath.startsWith(RENDERER_DIR)) {
-        return new Response('forbidden', { status: 403 });
-      }
+      const filePath = resolveWithinBase(RENDERER_DIR, rel || 'index.html');
+      if (!filePath) return new Response('not found', { status: 404 });
       return net.fetch(pathToFileURL(filePath).toString());
     } catch (err) {
       console.error('[protocol]', err);
@@ -131,9 +138,19 @@ function createMainWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
   });
   mainWindow = win;
+  // 遷移・新規ウィンドウの制限（レビュー高3）：自アプリ（maid://app/）の
+  // 外へは一切遷移させず、ポップアップも開かない。
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  win.webContents.on('will-navigate', (e, url) => {
+    if (!url.startsWith('maid://app/')) e.preventDefault();
+  });
+  win.webContents.on('will-redirect', (e, url) => {
+    if (!url.startsWith('maid://app/')) e.preventDefault();
+  });
   win.loadURL('maid://app/index.html').catch((err) => console.error('[loadURL]', err));
   win.on('closed', () => { if (mainWindow === win) mainWindow = null; });
   return win;
@@ -148,7 +165,7 @@ const lifecycle = require('./src/lifecycle');
 const store = require('./src/store');
 const { voiceDir, scanVoicePack } = require('./src/voice');
 const charactersModule = require('./src/characters');
-const { writeZip, readZip } = require('./src/zip');
+const { writeZip, readZip, ZIP_LIMITS } = require('./src/zip');
 
 function voiceDirPath() {
   return voiceDir(app.getPath('userData'));
@@ -231,33 +248,69 @@ function broadcast() {
   }
 }
 
-ipcMain.handle('get-state', () => snapshot());
+/* ---- IPC の信頼境界（レビュー高3） ----
+ * ハンドラは「自アプリのメインフレームからの呼び出し」だけを受け付ける。
+ * あわせて、ファイル選択ダイアログで実際に選ばれたパスをメイン側で記録し、
+ * キャラ登録のコピー元をその記録に限定する（レンダラーが任意のパスを
+ * 差し込んでもコピーできないようにする）。 */
+const pickedFilePaths = new Set();
 
-ipcMain.handle('set-dock-mode', (_e, mode) => {
+function isTrustedSender(event) {
+  try {
+    const frame = event && event.senderFrame;
+    if (!frame || frame !== event.sender.mainFrame) return false;
+    const u = new URL(frame.url);
+    return u.protocol === 'maid:' && u.hostname === 'app';
+  } catch {
+    return false;
+  }
+}
+
+function guard(handler, fallback) {
+  return (event, ...args) => {
+    if (!isTrustedSender(event)) {
+      console.error('[ipc] 信頼できない送信元からの呼び出しを拒否しました');
+      return fallback ? fallback() : snapshot();
+    }
+    return handler(event, ...args);
+  };
+}
+
+ipcMain.handle('get-state', guard(() => snapshot()));
+
+ipcMain.handle('set-dock-mode', guard((_e, mode) => {
   applyDockMode(mode);
   return snapshot();
-});
+}));
 
-ipcMain.handle('quit-app', () => {
+ipcMain.handle('quit-app', guard(() => {
   quitting = true;
   app.quit();
-});
+}));
 
-ipcMain.handle('toggle-check', (_e, { period, itemId }) => {
+ipcMain.handle('toggle-check', guard((_e, arg) => {
+  const { period, itemId } = arg || {};
+  if (!['daily', 'weekly', 'biweekly'].includes(period) || typeof itemId !== 'string') {
+    return snapshot();
+  }
   appState = lifecycle.toggleCheck(appState, period, itemId);
   save();
   broadcast();
   return snapshot();
-});
+}));
 
-ipcMain.handle('adjust-resource', (_e, { id, delta }) => {
+ipcMain.handle('adjust-resource', guard((_e, arg) => {
+  const { id, delta } = arg || {};
+  if (!RESOURCE_DEFS[id] || !Number.isFinite(delta) || Math.abs(delta) > 10000) {
+    return snapshot();
+  }
   appState = lifecycle.adjustResource(appState, id, delta);
   save();
   broadcast();
   return snapshot();
-});
+}));
 
-ipcMain.handle('set-address', (_e, value) => {
+ipcMain.handle('set-address', guard((_e, value) => {
   if (value === 'ご主人様' || value === 'お嬢様') {
     appState = structuredClone(appState);
     appState.settings.address = value;
@@ -265,33 +318,33 @@ ipcMain.handle('set-address', (_e, value) => {
     broadcast();
   }
   return snapshot();
-});
+}));
 
-ipcMain.handle('set-show-agent', (_e, value) => {
+ipcMain.handle('set-show-agent', guard((_e, value) => {
   appState = structuredClone(appState);
   appState.settings.showAgent = !!value;
   save();
   broadcast();
   return snapshot();
-});
+}));
 
-ipcMain.handle('set-voice-enabled', (_e, value) => {
+ipcMain.handle('set-voice-enabled', guard((_e, value) => {
   appState = structuredClone(appState);
   appState.settings.voiceEnabled = !!value;
   save();
   broadcast();
   return snapshot();
-});
+}));
 
-ipcMain.handle('set-show-bubble', (_e, value) => {
+ipcMain.handle('set-show-bubble', guard((_e, value) => {
   appState = structuredClone(appState);
   appState.settings.showBubble = !!value;
   save();
   broadcast();
   return snapshot();
-});
+}));
 
-ipcMain.handle('set-character', (_e, value) => {
+ipcMain.handle('set-character', guard((_e, value) => {
   const ids = resolvedCharacters().characters.map((c) => c.id);
   if (ids.includes(value)) {
     appState = structuredClone(appState);
@@ -300,11 +353,13 @@ ipcMain.handle('set-character', (_e, value) => {
     broadcast();
   }
   return snapshot();
-});
+}));
 
-ipcMain.handle('set-character-address', (_e, { charId, value }) => {
+ipcMain.handle('set-character-address', guard((_e, arg) => {
+  const { charId, value } = arg || {};
   const ids = resolvedCharacters().characters.map((c) => c.id);
-  if (ids.includes(charId)) {
+  if (typeof charId === 'string' && ids.includes(charId) &&
+      (value === null || value === undefined || (typeof value === 'string' && value.length <= 100))) {
     appState = structuredClone(appState);
     if (!appState.settings.characterAddress) appState.settings.characterAddress = {};
     if (typeof value === 'string' && value) {
@@ -316,7 +371,7 @@ ipcMain.handle('set-character-address', (_e, { charId, value }) => {
     broadcast();
   }
   return snapshot();
-});
+}));
 
 /* ---- キャラ登録・パッケージ（v0.7.0） ----
  * 登録は「キャラフォルダ＋character.json」を userData/characters/<id>/ に作る。
@@ -329,15 +384,17 @@ const PICK_FILTERS = {
   any: [{ name: 'すべてのファイル', extensions: ['*'] }],
 };
 
-ipcMain.handle('pick-file', async (_e, kind) => {
+ipcMain.handle('pick-file', guard(async (_e, kind) => {
   const filters = PICK_FILTERS[kind] || PICK_FILTERS.any;
   const res = await dialog.showOpenDialog(mainWindow, {
     properties: ['openFile'],
     filters,
   });
   if (res.canceled || res.filePaths.length === 0) return null;
+  // 登録のコピー元を「実際にダイアログで選ばれたファイル」に限定するため記録する
+  pickedFilePaths.add(path.resolve(res.filePaths[0]));
   return res.filePaths[0];
-});
+}, () => null));
 
 function slugifyId(name) {
   const base = String(name || '').toLowerCase()
@@ -347,26 +404,49 @@ function slugifyId(name) {
 
 function uniqueCharacterId(base) {
   const existing = new Set(resolvedCharacters().characters.map((c) => c.id));
-  if (!existing.has(base)) return base;
+  const taken = (cand) => existing.has(cand) ||
+    fs.existsSync(path.join(charactersDirPath(), cand));
+  if (!taken(base)) return base;
   for (let n = 2; ; n++) {
     const cand = `${base}-${n}`;
-    if (!existing.has(cand)) return cand;
+    if (!taken(cand)) return cand;
   }
 }
 
-ipcMain.handle('register-character', (_e, payload) => {
+// 登録用に「ダイアログで選択済み」のパスだけを通す（レビュー高3）
+function assertPickedFile(srcPath) {
+  if (typeof srcPath !== 'string' || !pickedFilePaths.has(path.resolve(srcPath))) {
+    throw new Error('ファイルは選択ダイアログから選んでください');
+  }
+}
+
+ipcMain.handle('register-character', guard((_e, payload) => {
+  // 一時フォルダで組み立てて検証し、確定時だけ本フォルダへ移す（レビュー中8：
+  // 途中で失敗しても部分登録が残らないように）。
+  let tmpDir = null;
+  let finalDir = null;
+  const copiedVoice = [];
   try {
     const p = payload || {};
+    if (typeof p.name !== 'string' || p.name.trim() === '' || p.name.length > 100) {
+      return { ok: false, error: '名前を入力してください（100文字まで）' };
+    }
+    if (!charactersModule.CHARACTER_TYPES.includes(p.type)) {
+      return { ok: false, error: '表示形式が不正です' };
+    }
     const id = uniqueCharacterId(slugifyId(p.name));
     const files = p.files || {};
-    const dir = path.join(charactersDirPath(), id);
-    fs.mkdirSync(dir, { recursive: true });
+    const baseDir = charactersDirPath();
+    fs.mkdirSync(baseDir, { recursive: true });
+    tmpDir = fs.mkdtempSync(path.join(baseDir, '.tmp-'));
+    finalDir = path.join(baseDir, id);
     const copied = {};
     const copySlot = (slot, srcPath, keepName = false) => {
       if (!srcPath) return null;
+      assertPickedFile(srcPath);
       const ext = path.extname(srcPath).toLowerCase();
       const destName = keepName ? path.basename(srcPath) : `${slot}${ext}`;
-      fs.copyFileSync(srcPath, path.join(dir, destName));
+      fs.copyFileSync(srcPath, path.join(tmpDir, destName));
       copied[slot] = destName;
       return destName;
     };
@@ -396,27 +476,32 @@ ipcMain.handle('register-character', (_e, payload) => {
       const dest = copySlot('model', files.model, true);
       if (dest) def.model = dest;
       for (const extra of files.extras || []) {
+        assertPickedFile(extra);
         const destName = path.basename(extra);
         if (charactersModule.isSafeFileName(destName)) {
-          fs.copyFileSync(extra, path.join(dir, destName));
+          fs.copyFileSync(extra, path.join(tmpDir, destName));
         }
       }
     }
     const errors = charactersModule.validateCharacterDef(def);
     if (errors.length > 0) {
-      fs.rmSync(dir, { recursive: true, force: true });
       return { ok: false, error: errors.join('／') };
     }
-    fs.writeFileSync(path.join(dir, 'character.json'), JSON.stringify(def, null, 2), 'utf8');
-    // ボイス（任意）は voice/<id>/ へ同じ規約で置く
+    fs.writeFileSync(path.join(tmpDir, 'character.json'), JSON.stringify(def, null, 2), 'utf8');
+    fs.renameSync(tmpDir, finalDir);
+    tmpDir = null;
+    // ボイス（任意）は voice/<id>/ へ同じ規約で置く。失敗したら登録自体を取り消す
     const voiceFiles = p.voiceFiles || {};
     for (const kind of ['greeting', 'praise', 'complete']) {
       if (voiceFiles[kind]) {
+        assertPickedFile(voiceFiles[kind]);
         const ext = path.extname(voiceFiles[kind]).toLowerCase();
         if (['.mp3', '.wav'].includes(ext)) {
           const vDir = path.join(voiceDirPath(), id);
           fs.mkdirSync(vDir, { recursive: true });
-          fs.copyFileSync(voiceFiles[kind], path.join(vDir, `${kind}${ext}`));
+          const dest = path.join(vDir, `${kind}${ext}`);
+          fs.copyFileSync(voiceFiles[kind], dest);
+          copiedVoice.push(dest);
         }
       }
     }
@@ -424,11 +509,15 @@ ipcMain.handle('register-character', (_e, payload) => {
     return { ok: true, id, state: snapshot() };
   } catch (err) {
     console.error('[register-character]', err);
+    if (tmpDir) { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* 無視 */ } }
+    if (finalDir) { try { fs.rmSync(finalDir, { recursive: true, force: true }); } catch { /* 無視 */ } }
+    for (const f of copiedVoice) { try { fs.rmSync(f, { force: true }); } catch { /* 無視 */ } }
     return { ok: false, error: String(err && err.message || err) };
   }
-});
+}, () => ({ ok: false, error: '許可されていない呼び出しです' })));
 
-ipcMain.handle('delete-character', (_e, charId) => {
+ipcMain.handle('delete-character', guard((_e, charId) => {
+  if (!charactersModule.isValidId(charId)) return snapshot();
   const target = resolvedCharacters().characters.find((c) => c.id === charId);
   if (target && !target.builtin) {
     fs.rmSync(path.join(charactersDirPath(), charId), { recursive: true, force: true });
@@ -440,7 +529,7 @@ ipcMain.handle('delete-character', (_e, charId) => {
     broadcast();
   }
   return snapshot();
-});
+}));
 
 function builtinExportDef(def) {
   const flat = {};
@@ -457,41 +546,38 @@ function builtinExportDef(def) {
   };
 }
 
-ipcMain.handle('export-character', async (_e, charId) => {
+ipcMain.handle('export-character', guard(async (_e, charId) => {
   try {
     const chars = resolvedCharacters().characters;
     const def = chars.find((c) => c.id === charId);
     if (!def) return { ok: false, error: 'キャラが見つかりません' };
+    // 定義だけ先に用意し、素材の読み込みは保存先が確定してから行う
     let exportDef;
-    let fileData;
+    let assetDir;
     if (def.builtin) {
       exportDef = builtinExportDef(def);
-      fileData = charactersModule.referencedFiles(exportDef)
-        .map((f) => ({
-          name: f,
-          data: fs.readFileSync(path.join(RENDERER_DIR, 'assets', f)),
-        }));
+      assetDir = path.join(RENDERER_DIR, 'assets');
     } else {
-      const dir = path.join(charactersDirPath(), charId);
-      exportDef = JSON.parse(fs.readFileSync(path.join(dir, 'character.json'), 'utf8'));
-      fileData = charactersModule.referencedFiles(exportDef)
-        .map((f) => ({ name: f, data: fs.readFileSync(path.join(dir, f)) }));
-      if (def.type === 'live2d') {
-        // モデルが参照する同梱ファイルも可能な範囲で一緒に包む
-        const known = new Set(fileData.map((f) => f.name));
-        for (const f of fs.readdirSync(dir)) {
-          if (f !== 'character.json' && !known.has(f) &&
-              charactersModule.isSafeFileName(f) && fs.statSync(path.join(dir, f)).isFile()) {
-            fileData.push({ name: f, data: fs.readFileSync(path.join(dir, f)) });
-          }
-        }
-      }
+      assetDir = path.join(charactersDirPath(), charId);
+      exportDef = JSON.parse(fs.readFileSync(path.join(assetDir, 'character.json'), 'utf8'));
     }
     const res = await dialog.showSaveDialog(mainWindow, {
       defaultPath: `${charId}.zip`,
       filters: [{ name: 'キャラクターパッケージ', extensions: ['zip'] }],
     });
     if (res.canceled || !res.filePath) return { ok: false, canceled: true };
+    const fileData = charactersModule.referencedFiles(exportDef)
+      .map((f) => ({ name: f, data: fs.readFileSync(path.join(assetDir, f)) }));
+    if (!def.builtin && def.type === 'live2d') {
+      // モデルが参照する同梱ファイルも可能な範囲で一緒に包む
+      const known = new Set(fileData.map((f) => f.name));
+      for (const f of fs.readdirSync(assetDir)) {
+        if (f !== 'character.json' && !known.has(f) &&
+            charactersModule.isSafeFileName(f) && fs.statSync(path.join(assetDir, f)).isFile()) {
+          fileData.push({ name: f, data: fs.readFileSync(path.join(assetDir, f)) });
+        }
+      }
+    }
     const zip = writeZip([
       { name: 'character.json', data: Buffer.from(JSON.stringify(exportDef, null, 2), 'utf8') },
       ...fileData,
@@ -502,16 +588,23 @@ ipcMain.handle('export-character', async (_e, charId) => {
     console.error('[export-character]', err);
     return { ok: false, error: String(err && err.message || err) };
   }
-});
-
-ipcMain.handle('import-character', async () => {
+}, () => ({ ok: false, error: '許可されていない呼び出しです' })));
+ipcMain.handle('import-character', guard(async () => {
+  // 一時フォルダで組み立ててから本フォルダへ移す（レビュー中8）。
+  // 読み込み前にファイルサイズで弾き、展開は src/zip.js の上限で制限する（中7）。
+  let tmpDir = null;
   try {
     const res = await dialog.showOpenDialog(mainWindow, {
       properties: ['openFile'],
       filters: [{ name: 'キャラクターパッケージ', extensions: ['zip'] }],
     });
     if (res.canceled || res.filePaths.length === 0) return { ok: false, canceled: true };
-    const entries = readZip(fs.readFileSync(res.filePaths[0]));
+    const zipPath = res.filePaths[0];
+    const st = fs.statSync(zipPath);
+    if (st.size > ZIP_LIMITS.maxInputBytes) {
+      return { ok: false, error: `パッケージが大きすぎます（上限 ${Math.floor(ZIP_LIMITS.maxInputBytes / 1024 / 1024)}MB）` };
+    }
+    const entries = readZip(fs.readFileSync(zipPath));
     let prefix = '';
     let defRaw = entries.get('character.json');
     if (!defRaw) {
@@ -529,48 +622,56 @@ ipcMain.handle('import-character', async () => {
     if (errors.length > 0) return { ok: false, error: errors.join('／') };
     const id = charactersModule.isValidId(def.id) ? def.id : slugifyId(def.name);
     const existing = new Set(resolvedCharacters().characters.map((c) => c.id));
-    if (existing.has(id)) {
+    const dir = path.join(charactersDirPath(), id);
+    if (existing.has(id) || fs.existsSync(dir)) {
       return { ok: false, error: `同じID「${id}」のキャラが既に登録されています` };
     }
-    const dir = path.join(charactersDirPath(), id);
-    fs.mkdirSync(dir, { recursive: true });
+    const baseDir = charactersDirPath();
+    fs.mkdirSync(baseDir, { recursive: true });
+    tmpDir = fs.mkdtempSync(path.join(baseDir, '.tmp-'));
     for (const f of charactersModule.referencedFiles(def)) {
       const data = entries.get(prefix + f) || entries.get(f);
       if (!data) {
-        fs.rmSync(dir, { recursive: true, force: true });
         return { ok: false, error: `素材ファイル ${f} がパッケージにありません` };
       }
-      fs.writeFileSync(path.join(dir, f), data);
+      fs.writeFileSync(path.join(tmpDir, f), data);
     }
     if (def.type === 'live2d') {
       for (const [key, data] of entries) {
         if (!key.startsWith(prefix)) continue;
         const base = path.basename(key);
         if (base && base !== 'character.json' && charactersModule.isSafeFileName(base) &&
-            !fs.existsSync(path.join(dir, base))) {
-          fs.writeFileSync(path.join(dir, base), data);
+            !fs.existsSync(path.join(tmpDir, base))) {
+          fs.writeFileSync(path.join(tmpDir, base), data);
         }
       }
     }
-    fs.writeFileSync(path.join(dir, 'character.json'),
+    fs.writeFileSync(path.join(tmpDir, 'character.json'),
       JSON.stringify({ ...def, id }, null, 2), 'utf8');
+    fs.renameSync(tmpDir, dir);
+    tmpDir = null;
     broadcast();
     return { ok: true, id, state: snapshot() };
   } catch (err) {
     console.error('[import-character]', err);
     return { ok: false, error: String(err && err.message || err) };
+  } finally {
+    if (tmpDir) { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* 無視 */ } }
   }
-});
+}, () => ({ ok: false, error: '許可されていない呼び出しです' })));
 
-ipcMain.handle('set-notify', (_e, { itemId, value }) => {
+ipcMain.handle('set-notify', guard((_e, arg) => {
+  const { itemId, value } = arg || {};
+  const knownIds = new Set(Object.values(PRESETS).flat().map((it) => it.id));
+  if (typeof itemId !== 'string' || !knownIds.has(itemId)) return snapshot();
   appState = structuredClone(appState);
   appState.settings.notify[itemId] = !!value;
   save();
   broadcast();
   return snapshot();
-});
+}));
 
-ipcMain.handle('set-anchor', (_e, value) => {
+ipcMain.handle('set-anchor', guard((_e, value) => {
   if (/^\d{4}-\d{2}-\d{2}$/.test(String(value))) {
     appState = structuredClone(appState);
     appState.settings.biweeklyAnchor = String(value);
@@ -581,7 +682,7 @@ ipcMain.handle('set-anchor', (_e, value) => {
     broadcast();
   }
   return snapshot();
-});
+}));
 
 app.whenReady().then(() => {
   appState = store.loadState(stateFilePath(), new Date());
